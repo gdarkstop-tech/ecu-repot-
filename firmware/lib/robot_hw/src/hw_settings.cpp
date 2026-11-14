@@ -8,7 +8,7 @@
 namespace robot {
 
 namespace {
-const char* kNs = "alia";
+const char* kNs = "robot";  // NVS namespace
 
 void copy(char* dst, size_t cap, const char* src) {
   strncpy(dst, src ? src : "", cap - 1);

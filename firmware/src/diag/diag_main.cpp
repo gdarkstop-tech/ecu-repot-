@@ -1,4 +1,4 @@
-// ALIA Robot — minimal diagnostic firmware (PlatformIO env: diag)
+// Educational robot — minimal diagnostic firmware (PlatformIO env: diag)
 //
 // Purpose: prove the basics on real hardware before anything else runs.
 //   1. serial output on BOTH USB ports (native USB-Serial/JTAG and the USB-UART bridge)
@@ -206,7 +206,7 @@ static void drawTestPattern(uint32_t frame, int eyeH) {
   display->drawFrame(0, 0, 128, 64);  // all four edges must be visible (SH1106 column offset check)
   drawEyes(eyeH);
   display->setFont(u8g2_font_5x7_tr);
-  display->drawStr(3, 61, "ALIA DIAG");
+  display->drawStr(3, 61, "ROBOT DIAG");
   char buf[24];
   snprintf(buf, sizeof(buf), "0x%02X %lu", R.oledAddr, (unsigned long)frame);
   display->drawStr(125 - display->getStrWidth(buf), 61, buf);

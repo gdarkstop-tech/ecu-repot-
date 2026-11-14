@@ -1,0 +1,10 @@
+# Laptop development tools (flashing, USB console, verification, gateway testing).
+# These are NOT needed for the robot to run.
+platformio==6.2.0
+esptool>=4.8
+pyserial>=3.5
+# used by the gateway test client and content generators
+httpx==0.28.1
+certifi
+arabic-reshaper==3.1.0
+python-bidi==0.6.12

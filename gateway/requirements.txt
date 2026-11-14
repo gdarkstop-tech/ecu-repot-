@@ -1,0 +1,9 @@
+# Robot AI gateway — pinned to the versions verified in development.
+fastapi==0.162.7
+uvicorn[standard]==0.54.0
+anthropic==2.8.0
+httpx==0.28.1
+arabic-reshaper==3.1.0
+python-bidi==0.6.12
+# tests
+pytest>=8

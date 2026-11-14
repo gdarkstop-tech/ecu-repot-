@@ -1,4 +1,4 @@
-// ALIA Robot — standalone firmware (PlatformIO env: robot)
+// Educational robot — standalone firmware (PlatformIO env: robot)
 //
 // Runs entirely on the ESP32-S3. The laptop is NOT needed in normal operation; the USB debug
 // link is only for development, testing and first-time provisioning.

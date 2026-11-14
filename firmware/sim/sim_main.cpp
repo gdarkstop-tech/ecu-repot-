@@ -1,4 +1,4 @@
-// ALIA Robot host simulator.
+// Educational robot — host simulator.
 //
 // Runs the firmware's portable logic (robot_logic) and renderer (robot_ui) on a PC, drawing
 // into a real U8g2 SH1106 frame buffer. Two modes:

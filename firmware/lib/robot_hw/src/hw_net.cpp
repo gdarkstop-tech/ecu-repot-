@@ -7,6 +7,7 @@
 #include <stdarg.h>
 
 #include "ca_roots.h"
+#include "gateway_reply.h"
 #include "utf8.h"
 
 #ifndef ROBOT_FW_VERSION
@@ -105,22 +106,6 @@ int WifiManager::scanResult(char* out, size_t cap) {
 // ================================================================== gateway
 namespace {
 volatile bool g_busy = false;
-
-bool safeAudioPath(const char* p) {
-  // Relative path on the SAME gateway only: the device token must never go anywhere else.
-  if (!p || strncmp(p, "/v1/", 4) != 0 || strlen(p) > 95 || strstr(p, "..")) return false;
-  for (const char* c = p; *c; c++) {
-    if (!((*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') || (*c >= '0' && *c <= '9') || *c == '/' ||
-          *c == '_' || *c == '-' || *c == '.'))
-      return false;
-  }
-  return true;
-}
-
-bool allowedEmotion(Expression e) {
-  return e == Expression::Happy || e == Expression::Sad || e == Expression::Surprised || e == Expression::Idle ||
-         e == Expression::Thinking;
-}
 }  // namespace
 
 void GatewayClient::begin(Settings* s, WifiManager* wifi, SpeakerOutput* spk, LogFn log, void* ctx) {
@@ -213,45 +198,8 @@ void GatewayClient::run() {
 }
 
 bool GatewayClient::parseReply(const char* body, size_t len, char* audioPath, size_t pathCap, uint32_t& audioRate) {
-  JsonDocument doc;
-  if (deserializeJson(doc, body, len, DeserializationOption::NestingLimit(4))) return false;
   GatewayReply r;
-  r.ignore = doc["ignore"] | false;
-  utf8CopyTruncate(r.lang, sizeof(r.lang), doc["lang"] | "");
-  JsonObjectConst disp = doc["display"];
-  const char* oled = disp["oled_text"] | "";
-  if (!utf8IsValid(oled)) return false;
-  utf8CopyTruncate(r.oledText, sizeof(r.oledText), oled);
-  r.rtl = disp["rtl"] | false;
-  JsonObjectConst content = disp["content"];
-  if (!content.isNull()) {
-    ContentKind k;
-    const char* v = content["value"] | "";
-    const char* cap = content["caption"] | "";
-    if (parseContentKind(content["kind"] | "", k) && *v && utf8IsValid(v) && utf8IsValid(cap)) {
-      r.contentKind = k;
-      utf8CopyTruncate(r.contentValue, sizeof(r.contentValue), v);
-      utf8CopyTruncate(r.contentCaption, sizeof(r.contentCaption), cap);
-    }
-  }
-  Expression e;
-  r.emotion = (parseExpression(doc["emotion"] | "happy", e) && allowedEmotion(e)) ? e : Expression::Happy;
-
-  audioPath[0] = 0;
-  JsonObjectConst audio = doc["audio"];
-  if (!audio.isNull() && !r.ignore) {
-    const char* fmt = audio["format"] | "";
-    const char* path = audio["path"] | "";
-    uint32_t rate = audio["sample_rate"] | 0;
-    bool rateOk = rate == 8000 || rate == 16000 || rate == 22050 || rate == 24000;
-    if (strcmp(fmt, "pcm_s16le") == 0 && rateOk && safeAudioPath(path)) {
-      snprintf(audioPath, pathCap, "%s", path);
-      audioRate = rate;
-      r.hasAudio = true;
-    } else {
-      log("warn", "gateway: reply audio rejected (format/rate/path)");
-    }
-  }
+  if (!parseGatewayReply(body, len, r, audioPath, pathCap, audioRate)) return false;
   xSemaphoreTake(mtx_, portMAX_DELAY);
   reply_ = r;
   xSemaphoreGive(mtx_);

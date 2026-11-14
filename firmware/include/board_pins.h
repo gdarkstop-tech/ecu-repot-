@@ -1,4 +1,4 @@
-// ALIA Robot — GPIO assignments for ESP32-S3-DevKitC-1 N16R8.
+// Educational robot — GPIO assignments for ESP32-S3-DevKitC-1 N16R8.
 //
 // Single source of truth for pin usage. docs/WIRING.md mirrors this file.
 //
