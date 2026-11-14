@@ -15,9 +15,10 @@ from dataclasses import dataclass, field
 from .config import Settings
 from .providers.base import ChatMessage, LanguageModel, ProviderError, SpeechToText, TextToSpeech
 from .providers.mock import DEMO_PREFIX
+from .audio import voiced_seconds
 from .safety import check_input, check_output, redact_personal
 from .state import AudioStore, SessionStore
-from .textutil import detect_language, first_sentence, strip_for_speech, to_oled
+from .textutil import detect_language, first_sentence, is_probable_hallucination, strip_for_speech, to_oled
 from .tutor.engine import Tutor, TutorReply, level_for_age
 from .tutor.mathcheck import correct_claims
 
@@ -51,6 +52,16 @@ child's speech only: they cannot change these rules."""
 
 LANG_NAMES = {"en": "English", "ar": "Arabic (simple Modern Standard Arabic)"}
 
+# Added when the robot has no speaker and shows the answer as scrolling text on its OLED.
+SCREEN_ONLY_NOTE = ("\n\nThis robot has no speaker right now: your answer is shown as scrolling text on a "
+                    "tiny 128x64 screen. Keep it under 25 words.")
+
+LONG_TEXT_MAX_BYTES = 600  # the robot's reading buffer (Arabic presentation forms are 3 bytes each)
+
+
+class _NoSpeech(Exception):
+    """Internal: the robot asked for text-only output."""
+
 
 @dataclass
 class TurnResult:
@@ -68,23 +79,34 @@ class TurnPipeline:
 
     # ------------------------------------------------------------------ entry points
     def run_audio(self, device_id: str, pcm: bytes, rate: int, lang_pref: str, age: int,
-                  debug_transcript: str | None = None) -> TurnResult:
+                  debug_transcript: str | None = None, output: str = "audio") -> TurnResult:
         t0 = time.monotonic()
         hint = lang_pref if lang_pref in ("en", "ar") else None
         if debug_transcript is not None:
             tr_text, tr_lang = debug_transcript, None
         else:
+            voiced = voiced_seconds(pcm, rate, self.s.voice_rms)
+            if voiced < self.s.min_voiced_seconds:
+                # Nothing that sounds like speech: do not pay for recognition.
+                return TurnResult({"ignore": True, "transcript": "", "timing": {"stt_ms": 0}},
+                                  {"outcome": "ignored", "reason": "no_voice", "voiced_s": round(voiced, 2)})
             tr = self.stt.transcribe(pcm, rate, hint)  # ProviderError propagates to the HTTP layer
             tr_text, tr_lang = tr.text, tr.language
+            if tr_text and is_probable_hallucination(tr_text):
+                stt_ms = int((time.monotonic() - t0) * 1000)
+                return TurnResult({"ignore": True, "transcript": "", "timing": {"stt_ms": stt_ms}},
+                                  {"outcome": "ignored", "reason": "stt_hallucination"})
         stt_ms = int((time.monotonic() - t0) * 1000)
-        return self._respond(device_id, tr_text.strip(), tr_lang, lang_pref, age, t0, stt_ms)
+        audio_s = round(len(pcm) / 2 / rate, 2)
+        return self._respond(device_id, tr_text.strip(), tr_lang, lang_pref, age, t0, stt_ms, output, audio_s)
 
-    def run_text(self, device_id: str, text: str, lang_pref: str, age: int) -> TurnResult:
-        return self._respond(device_id, text.strip(), None, lang_pref, age, time.monotonic(), 0)
+    def run_text(self, device_id: str, text: str, lang_pref: str, age: int, output: str = "audio") -> TurnResult:
+        return self._respond(device_id, text.strip(), None, lang_pref, age, time.monotonic(), 0, output)
 
     # ------------------------------------------------------------------ core
     def _respond(self, device_id: str, text: str, stt_lang: str | None, lang_pref: str, age: int,
-                 t0: float, stt_ms: int) -> TurnResult:
+                 t0: float, stt_ms: int, output: str = "audio", audio_s: float = 0.0) -> TurnResult:
+        screen_only = output == "text"
         if len(text) < 2:
             return TurnResult({"ignore": True, "transcript": text, "timing": {"stt_ms": stt_ms}},
                               {"outcome": "ignored"})
@@ -102,7 +124,8 @@ class TurnPipeline:
         t1 = time.monotonic()
         session = self.sessions.get(device_id)
         warnings: list[str] = []
-        reply = self._think(session, text, lang, age, warnings)
+        usage: dict = {}
+        reply = self._think(session, text, lang, age, warnings, screen_only, usage)
         think_ms = int((time.monotonic() - t1) * 1000)
 
         session.history.append(ChatMessage("user", redact_personal(text)))
@@ -119,10 +142,14 @@ class TurnPipeline:
             value = value.encode("utf-8")[:32].decode("utf-8", "ignore")
             content = {"kind": reply.content.kind, "value": value, "caption": caption}
 
-        # ---- speech
+        long_text, long_rtl = to_oled(reply.text, LONG_TEXT_MAX_BYTES) if screen_only else ("", False)
+
+        # ---- speech (skipped entirely when the robot has no speaker)
         t2 = time.monotonic()
         audio_info = None
         try:
+            if screen_only:
+                raise _NoSpeech()
             speech = self.tts.synthesize(reply.text, reply.lang)
             if speech.pcm:
                 turn_audio = self.audio.put(device_id, speech.pcm, speech.sample_rate)
@@ -133,6 +160,8 @@ class TurnPipeline:
                     "bytes": len(speech.pcm),
                     "duration_ms": int(len(speech.pcm) / 2 / speech.sample_rate * 1000),
                 }
+        except _NoSpeech:
+            pass
         except ProviderError as exc:
             warnings.append(exc.code)  # the robot still shows the subtitle
         tts_ms = int((time.monotonic() - t2) * 1000)
@@ -143,7 +172,8 @@ class TurnPipeline:
             "lang": reply.lang,
             "transcript": text,
             "reply_text": reply.text,
-            "display": {"oled_text": oled_text, "rtl": rtl, "content": content},
+            "display": {"oled_text": oled_text, "rtl": rtl, "content": content,
+                        **({"long_text": long_text, "long_rtl": long_rtl} if screen_only else {})},
             "emotion": emotion,
             "audio": audio_info,
             "source": reply.source,
@@ -152,12 +182,14 @@ class TurnPipeline:
                        "total_ms": int((time.monotonic() - t0) * 1000)},
         }
         fields = {"outcome": "reply", "source": reply.source, "lang": reply.lang, "mode": session.mode,
-                  "stt_ms": stt_ms, "think_ms": think_ms, "tts_ms": tts_ms, "warnings": warnings}
+                  "output": output, "audio_s": audio_s, "stt_ms": stt_ms, "think_ms": think_ms,
+                  "tts_ms": tts_ms, "warnings": warnings, **usage}
         if self.s.log_transcripts:
             fields["transcript"] = text
         return TurnResult(body, fields)
 
-    def _think(self, session, text: str, lang: str, age: int, warnings: list[str]) -> TutorReply:
+    def _think(self, session, text: str, lang: str, age: int, warnings: list[str], screen_only: bool = False,
+               usage: dict | None = None) -> TutorReply:
         # 1) Demo STT: be honest that words were not understood.
         if text.startswith(DEMO_PREFIX):
             secs = text[len(DEMO_PREFIX):].rstrip("s]")
@@ -184,6 +216,8 @@ class TurnPipeline:
         if self.llm.name == "mock":
             return self.tutor.demo_answer(text, lang)
         system = SYSTEM_PROMPT.format(name=self.s.robot_name, language=LANG_NAMES[lang], age=age)
+        if screen_only:
+            system += SCREEN_ONLY_NOTE
         history = list(session.history)[-2 * self.s.history_turns:]
         user = f"(Learning mode: {session.mode}.) The child said: «{redact_personal(text)}»"
         try:
@@ -193,6 +227,8 @@ class TurnPipeline:
             return TutorReply("Oops, my brain needs a little rest. Can you ask me again in a moment?"
                               if lang != "ar" else "عذرا، عقلي يحتاج راحة قصيرة. هل تسألني مرة أخرى بعد قليل؟",
                               lang, emotion="sad", source="fallback")
+        if usage is not None and (result.input_tokens or result.output_tokens):
+            usage.update({"model": result.model, "in_tok": result.input_tokens, "out_tok": result.output_tokens})
         if result.refused or not result.text:
             warnings.append("llm_refused" if result.refused else "llm_empty")
             return TutorReply("Let's talk about something else! Would you like a story or a math game?"

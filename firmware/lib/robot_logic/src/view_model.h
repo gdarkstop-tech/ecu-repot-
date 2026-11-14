@@ -42,6 +42,12 @@ struct ViewModel {
 
   const char* errorCode = "";
 
+  // Full answer shown as scrolling text while SPEAKING (robot without a speaker).
+  const char* readingText = "";
+  bool readingRtl = false;
+  uint32_t readingSince = 0;       // reading view starts at this time
+  uint32_t readingDurationMs = 0;  // scroll is paced to finish within this
+
   // Selftest progress (0 = not running)
   uint8_t selftestStep = 0;
   uint8_t selftestTotal = 0;

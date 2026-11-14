@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "utf8.h"
+
 namespace robot {
 
 const char* toString(Conversation::Phase p) {
@@ -165,8 +167,18 @@ void Conversation::tick(uint32_t now) {
       phase_ = Phase::Speaking;
       phaseSince_ = now;
       audioSeen_ = false;
-      robot_.requestState(RobotState::Speaking, now);
-      if (reply_.oledText[0]) robot_.setMarquee(reply_.oledText, reply_.rtl, now);
+      if (!reply_.hasAudio && reply_.longText[0]) {
+        // Text-only robot: a happy face, then the whole answer scrolls, paced for reading.
+        uint32_t readMs = readingTimeMs(reply_.longText, reply_.longRtl);
+        textHoldMs_ = cfg_.textIntroMs + readMs;
+        robot_.requestState(RobotState::Speaking, now, textHoldMs_ + 3000);
+        robot_.setExpressionOverride(Expression::Happy, now, cfg_.textIntroMs);
+        robot_.showReading(reply_.longText, reply_.longRtl, now + cfg_.textIntroMs, readMs);
+      } else {
+        textHoldMs_ = 2500;  // subtitle-only reply: let it be read briefly
+        robot_.requestState(RobotState::Speaking, now);
+        if (reply_.oledText[0]) robot_.setMarquee(reply_.oledText, reply_.rtl, now);
+      }
       return;
     }
 
@@ -181,7 +193,7 @@ void Conversation::tick(uint32_t now) {
       if (active) audioSeen_ = true;
       robot_.setMicActivity(false, active ? audio_.level() : 0);
       uint32_t elapsed = now - phaseSince_;
-      bool noAudioExpected = !reply_.hasAudio && elapsed >= 2500;  // let subtitles be read
+      bool noAudioExpected = !reply_.hasAudio && elapsed >= textHoldMs_;  // let the text be read
       bool audioNeverStarted = reply_.hasAudio && !audioSeen_ && elapsed >= cfg_.playbackStartGraceMs;
       if ((audioSeen_ && !active) || noAudioExpected || audioNeverStarted) {
         if (audioNeverStarted) emitTurnEvent("audio_missing");

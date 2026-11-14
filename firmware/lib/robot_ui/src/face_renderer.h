@@ -57,6 +57,7 @@ class FaceRenderer {
   // screens
   void drawContent(u8g2_t* g, const ViewModel& vm, uint32_t now);
   void drawOverlayText(u8g2_t* g, const char* text, bool rtl);
+  void drawReading(u8g2_t* g, const ViewModel& vm, uint32_t now);
   void drawMarquee(u8g2_t* g, const ViewModel& vm, uint32_t now, int top);
 
   EyeShape cur_{};

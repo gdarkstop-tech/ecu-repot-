@@ -30,6 +30,7 @@ struct DeviceInfo {
   bool micEnabled = false;      // I2S RX driver running
   bool micSignal = false;       // real, varying samples observed (not all zero / stuck)
   bool speakerEnabled = false;  // I2S TX driver running (no feedback path: cannot prove sound)
+  bool speakerConfigured = false;  // "speaker" setting: false = text-only answers on the OLED
   bool wifiConfigured = false;
   bool wifiConnected = false;
   int rssi = 0;
@@ -82,6 +83,8 @@ class Robot {
   void clearContent();
   void showOverlayText(const char* text, bool rtl, uint32_t now, uint32_t ms);
   void setMarquee(const char* text, bool rtl, uint32_t now);
+  // Show a full answer as scrolling text from `startAt` for `durationMs` (no-speaker mode).
+  void showReading(const char* text, bool rtl, uint32_t startAt, uint32_t durationMs);
   void clearAll(uint32_t now);
 
   // Emits {"evt":...} lines on the debug link (no-op cost if nobody listens).
@@ -126,6 +129,10 @@ class Robot {
   uint32_t overlayUntil_ = 0;
 
   char marquee_[kMaxTextBytes + 1] = {0};
+  char reading_[kMaxLongTextBytes + 1] = {0};
+  bool readingRtl_ = false;
+  uint32_t readingSince_ = 0;
+  uint32_t readingMs_ = 0;
   bool marqueeRtl_ = false;
   uint32_t marqueeSince_ = 0;
 

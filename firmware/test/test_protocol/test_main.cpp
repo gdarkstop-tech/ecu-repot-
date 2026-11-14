@@ -6,6 +6,8 @@
 #include "line_framer.h"
 #include "utf8.h"
 
+#include <string>
+
 using namespace robot;
 
 void setUp() {}
@@ -133,6 +135,30 @@ void test_tone_hz_bounds() {
   TEST_ASSERT_EQUAL((int)ParseError::BadParam, (int)parse("{\"cmd\":\"tone\",\"hz\":20000}", c));
 }
 
+void test_read_command_takes_long_text() {
+  char line[512];
+  char body[401];
+  memset(body, 'w', 400);
+  body[400] = 0;
+  snprintf(line, sizeof(line), "{\"cmd\":\"read\",\"text\":\"%s\",\"rtl\":true}", body);
+  DebugCommand c;
+  TEST_ASSERT_EQUAL((int)ParseError::None, (int)parseCommand(line, strlen(line), c, nullptr));
+  TEST_ASSERT_EQUAL((int)CmdType::Read, (int)c.type);
+  TEST_ASSERT_EQUAL(400, (int)strlen(c.longText));
+  TEST_ASSERT_TRUE(c.rtl);
+  TEST_ASSERT_FALSE(c.truncated);
+}
+
+void test_reading_time_scales_and_clamps() {
+  TEST_ASSERT_EQUAL_UINT32(4000, readingTimeMs("Hi", false));
+  TEST_ASSERT_EQUAL_UINT32(2000 + 100 * 100, readingTimeMs(std::string(100, 'a').c_str(), false));
+  TEST_ASSERT_EQUAL_UINT32(60000, readingTimeMs(std::string(1000, 'a').c_str(), false));
+  // Arabic: counted in characters (2-3 bytes each), read more slowly.
+  std::string ar;
+  for (int i = 0; i < 40; i++) ar += "\xD8\xA8";
+  TEST_ASSERT_EQUAL_UINT32(2000 + 40 * 150, readingTimeMs(ar.c_str(), true));
+}
+
 void test_deep_nesting_rejected() {
   DebugCommand c;
   TEST_ASSERT_EQUAL((int)ParseError::BadJson, (int)parse("{\"cmd\":\"ping\",\"x\":{\"y\":{\"z\":1}}}", c));
@@ -193,6 +219,8 @@ int main() {
   RUN_TEST(test_config_value_never_silently_truncated);
   RUN_TEST(test_mute_requires_bool);
   RUN_TEST(test_tone_hz_bounds);
+  RUN_TEST(test_read_command_takes_long_text);
+  RUN_TEST(test_reading_time_scales_and_clamps);
   RUN_TEST(test_deep_nesting_rejected);
   RUN_TEST(test_framer_lines_crlf_and_empty);
   RUN_TEST(test_framer_overflow_discards_until_newline_then_recovers);

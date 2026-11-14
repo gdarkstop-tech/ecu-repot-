@@ -1,8 +1,12 @@
 """Claude as the conversation model, via the official Anthropic Python SDK.
 
-The API key is read by the SDK from ANTHROPIC_API_KEY (never logged or returned).
-Defaults: Claude Opus 5.5 at low effort (short spoken replies), with server-side refusal
-fallbacks enabled so a declined request is retried on a fallback model in the same call.
+The API key is read by the SDK from ANTHROPIC_API_KEY (never logged or returned). It is an
+Anthropic API (Console) key, billed per token — a Claude.ai subscription does not cover it.
+
+Default: Claude Haiku 5.5 at effort "low" — the fast, low-cost model, suited to short replies
+for a child. Thinking is adaptive (on by default on this model); effort is the speed/cost lever.
+Server-side refusal fallbacks are sent only to models that support them (Haiku 5.5 does not:
+there a refusal is handled by the gateway's safe fallback reply).
 """
 from __future__ import annotations
 
@@ -14,18 +18,21 @@ from .base import ChatMessage, LlmResult, ProviderError
 
 log = logging.getLogger("gateway.anthropic")
 
+# Models that accept the server-side `fallbacks` parameter (beta server-side-fallback-2026-07-01).
+FALLBACK_MODELS = {"claude-fable-5-2", "claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
+
 
 class AnthropicLLM:
     name = "anthropic"
 
-    def __init__(self, model: str = "claude-opus-5-5", effort: str = "low", fallbacks: bool = True,
-                 client: anthropic.Anthropic | None = None, max_tokens: int = 4096) -> None:
+    def __init__(self, model: str = "claude-haiku-5-5", effort: str = "low", fallbacks: bool = True,
+                 client: anthropic.Anthropic | None = None, max_tokens: int = 2048) -> None:
         # A short timeout: a child is waiting. The SDK retries 429/5xx/connection errors itself.
         self.client = client or anthropic.Anthropic(timeout=25.0, max_retries=1)
         self.model = model
         self.effort = effort
-        self.fallbacks = fallbacks
-        self.max_tokens = max_tokens
+        self.fallbacks = fallbacks and model in FALLBACK_MODELS
+        self.max_tokens = max_tokens  # leaves room for adaptive thinking plus a short answer
 
     def reply(self, system: str, history: list[ChatMessage], user_text: str) -> LlmResult:
         messages = [{"role": m.role, "content": m.text} for m in history]
@@ -59,7 +66,12 @@ class AnthropicLLM:
         except anthropic.APIConnectionError as exc:
             raise ProviderError("llm_unreachable") from exc
 
+        usage = getattr(response, "usage", None)
+        in_tok = int(getattr(usage, "input_tokens", 0) or 0)
+        out_tok = int(getattr(usage, "output_tokens", 0) or 0)
         if response.stop_reason == "refusal":
-            return LlmResult(text="", refused=True, model=response.model)
+            return LlmResult(text="", refused=True, model=response.model, input_tokens=in_tok, output_tokens=out_tok)
+        # Read blocks by type: the response can start with (empty) thinking blocks.
         text = "".join(b.text for b in response.content if b.type == "text").strip()
-        return LlmResult(text=text, truncated=response.stop_reason == "max_tokens", model=response.model)
+        return LlmResult(text=text, truncated=response.stop_reason == "max_tokens", model=response.model,
+                         input_tokens=in_tok, output_tokens=out_tok)

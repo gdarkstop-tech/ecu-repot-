@@ -10,35 +10,51 @@ from robot_gateway.providers.anthropic_llm import AnthropicLLM
 from robot_gateway.providers.base import ChatMessage, ProviderError
 
 
-def make(handler):
+def make(handler, model="claude-haiku-5-5"):
     client = anthropic.Anthropic(api_key="test-key", base_url="https://api.test",
                                  http_client=httpx2.Client(transport=httpx2.MockTransport(handler)), max_retries=0)
-    return AnthropicLLM(client=client)
+    return AnthropicLLM(model=model, client=client)
 
 
-def message(text="Hello!", stop="end_turn"):
-    return {"id": "msg_1", "type": "message", "role": "assistant", "model": "claude-opus-5-5",
-            "content": [{"type": "text", "text": text}], "stop_reason": stop, "stop_sequence": None,
-            "usage": {"input_tokens": 10, "output_tokens": 5}}
+def message(text="Hello!", stop="end_turn", model="claude-haiku-5-5"):
+    return {"id": "msg_1", "type": "message", "role": "assistant", "model": model,
+            "content": [{"type": "thinking", "thinking": "", "signature": "sig"}, {"type": "text", "text": text}],
+            "stop_reason": stop, "stop_sequence": None, "usage": {"input_tokens": 410, "output_tokens": 37}}
 
 
-def test_request_shape_and_text():
+def test_default_is_haiku_low_effort_without_fallbacks():
     seen = {}
 
     def handler(req):
         seen["body"] = json.loads(req.content)
         seen["beta"] = req.headers.get("anthropic-beta", "")
+        seen["path"] = req.url.path
         return httpx2.Response(200, json=message("Cats purr when happy."))
 
     r = make(handler).reply("SYSTEM", [ChatMessage("user", "hi"), ChatMessage("assistant", "hello")], "why purr?")
     b = seen["body"]
-    assert r.text == "Cats purr when happy." and not r.refused
-    assert b["model"] == "claude-opus-5-5"
+    assert r.text == "Cats purr when happy." and not r.refused  # text read by block type, after thinking
+    assert (r.input_tokens, r.output_tokens) == (410, 37)
+    assert b["model"] == "claude-haiku-5-5"
     assert b["output_config"] == {"effort": "low"}
-    assert b["fallbacks"] == "default" and "server-side-fallback-2026-07-01" in seen["beta"]
+    assert b["max_tokens"] == 2048
+    assert "fallbacks" not in b and "server-side-fallback" not in seen["beta"]  # Haiku 5.5: no fallback
+    assert seen["path"] == "/v1/messages"
     assert b["system"][0]["cache_control"] == {"type": "ephemeral"}
     assert [m["role"] for m in b["messages"]] == ["user", "assistant", "user"]
-    assert "thinking" not in b  # thinking cannot be disabled on Opus 5.5; effort controls depth
+    assert "thinking" not in b and "temperature" not in b
+
+
+def test_fallbacks_only_for_models_that_support_them():
+    seen = {}
+
+    def handler(req):
+        seen["body"] = json.loads(req.content)
+        seen["beta"] = req.headers.get("anthropic-beta", "")
+        return httpx2.Response(200, json=message("ok", model="claude-opus-5-5"))
+
+    make(handler, model="claude-opus-5-5").reply("S", [], "x")
+    assert seen["body"]["fallbacks"] == "default" and "server-side-fallback-2026-07-01" in seen["beta"]
 
 
 def test_refusal_is_reported():

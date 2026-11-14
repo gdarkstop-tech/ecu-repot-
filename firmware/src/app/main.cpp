@@ -93,6 +93,7 @@ class Platform : public IRobotPlatform {
     i.micEnabled = g_mic.enabled();
     i.micSignal = g_mic.signalSeen();
     i.speakerEnabled = g_spk.installed();
+    i.speakerConfigured = g_settings.speaker;
     i.wifiConfigured = g_settings.wifiConfigured();
     i.wifiConnected = g_wifi.connected();
     i.rssi = g_wifi.rssi();
@@ -127,6 +128,7 @@ void emitConfig() {
   doc["mic_gain"] = g_settings.micGain;
   doc["oled_driver"] = g_settings.oledDriver;
   doc["mic_channel"] = g_settings.micChannel;
+  doc["speaker"] = g_settings.speaker ? "on" : "off";
   char line[512];
   serializeJson(doc, line, sizeof(line));
   g_link.writeLine(line);
@@ -142,7 +144,8 @@ bool Platform::runCommand(const DebugCommand& c, char* err, size_t n) {
       if (strcmp(c.key, "volume") == 0) g_spk.setVolume(g_settings.volume);
       if (strcmp(c.key, "mic_gain") == 0) g_mic.setGain(g_settings.micGain);
       if (strcmp(c.key, "child_age") == 0) g_offline.setAge(g_settings.childAge);
-      bool needsReboot = strcmp(c.key, "oled_driver") == 0 || strcmp(c.key, "mic_channel") == 0;
+      bool needsReboot = strcmp(c.key, "oled_driver") == 0 || strcmp(c.key, "mic_channel") == 0 ||
+                         strcmp(c.key, "speaker") == 0;
       char line[160];
       snprintf(line, sizeof(line), "{\"evt\":\"config_saved\",\"key\":\"%s\",\"secret\":%s,\"reboot_required\":%s}",
                c.key, SettingsStore::isSecret(c.key) ? "true" : "false", needsReboot ? "true" : "false");
@@ -346,10 +349,15 @@ void setup() {
   if (g_uttStorage) g_utt.attach(g_uttStorage, kUtteranceSamples);
   else g_link.logf("error", "PSRAM allocation for utterance buffer failed");
   bool micOk = g_mic.begin(strcmp(g_settings.micChannel, "right") == 0, g_settings.micGain);
-  bool spkOk = g_spk.begin();
-  g_spk.setVolume(g_settings.volume);
-  g_link.logf(micOk && spkOk ? "info" : "error", "audio drivers: mic=%s speaker=%s", micOk ? "ok" : "FAILED",
-              spkOk ? "ok" : "FAILED");
+  // Without a speaker the I2S output is not started at all (GPIO15-18 stay untouched) and
+  // answers are shown as scrolling text on the OLED.
+  bool spkOk = true;
+  if (g_settings.speaker) {
+    spkOk = g_spk.begin();
+    g_spk.setVolume(g_settings.volume);
+  }
+  g_link.logf(micOk && spkOk ? "info" : "error", "audio: mic=%s output=%s", micOk ? "ok" : "FAILED",
+              !g_settings.speaker ? "text-only (no speaker)" : (spkOk ? "speaker" : "speaker FAILED"));
 
   g_offline.setAge(g_settings.childAge);
   g_offline.seed(esp_random());

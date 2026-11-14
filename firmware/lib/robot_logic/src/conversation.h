@@ -28,6 +28,8 @@ struct GatewayReply {
   ContentKind contentKind = ContentKind::None;
   char contentValue[kMaxValueBytes + 1] = {0};
   char contentCaption[kMaxTextBytes + 1] = {0};
+  char longText[kMaxLongTextBytes + 1] = {0};  // full answer for text-only robots
+  bool longRtl = false;
   Expression emotion = Expression::Happy;
   bool hasAudio = false;
   char lang[8] = {0};
@@ -63,6 +65,7 @@ struct ConversationConfig {
   uint32_t playbackStartGraceMs = 1500;  // time allowed for reply audio to begin
   uint32_t learningHoldMs = 20000;  // how long reply content (e.g. a letter) stays up
   uint32_t emotionMs = 1800;        // reply emotion shown after speaking
+  uint32_t textIntroMs = 1200;      // happy face before the answer text starts scrolling
 };
 
 class Conversation {
@@ -109,6 +112,7 @@ class Conversation {
   Phase phase_ = Phase::Waiting;
   uint32_t phaseSince_ = 0;
   bool audioSeen_ = false;
+  uint32_t textHoldMs_ = 2500;  // how long SPEAKING lasts when there is no reply audio
   GatewayReply reply_;
   OfflineFn offlineFn_ = nullptr;
   void* offlineCtx_ = nullptr;

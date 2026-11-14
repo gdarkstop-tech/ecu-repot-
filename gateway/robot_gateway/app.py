@@ -116,6 +116,7 @@ def create_app(settings: Settings | None = None, *, stt: SpeechToText | None = N
     async def turn_audio(request: Request, dev: Device = Depends(device_auth),
                          x_robot_lang: str | None = Header(default=None),
                          x_robot_age: str | None = Header(default=None),
+                         x_robot_output: str | None = Header(default=None),
                          x_debug_transcript: str | None = Header(default=None)) -> JSONResponse:
         rate = _parse_l16(request.headers.get("content-type"))
         if not limiter.allow(dev.id):
@@ -126,13 +127,15 @@ def create_app(settings: Settings | None = None, *, stt: SpeechToText | None = N
             raise HTTPException(400, {"error": "audio_too_short"})
         lang, age = robot_prefs(x_robot_lang, x_robot_age)
         debug = x_debug_transcript if settings.allow_debug_transcript else None
-        result = await run_in_threadpool(run_or_502, pipeline.run_audio, dev.id, pcm, rate, lang, age, debug)
+        output = "text" if (x_robot_output or "").lower() == "text" else "audio"
+        result = await run_in_threadpool(run_or_502, pipeline.run_audio, dev.id, pcm, rate, lang, age, debug, output)
         return finish(dev, result)
 
     @app.post("/v1/turns/text")
     async def turn_text(request: Request, dev: Device = Depends(device_auth),
                         x_robot_lang: str | None = Header(default=None),
-                        x_robot_age: str | None = Header(default=None)) -> JSONResponse:
+                        x_robot_age: str | None = Header(default=None),
+                        x_robot_output: str | None = Header(default=None)) -> JSONResponse:
         if not limiter.allow(dev.id):
             raise HTTPException(429, {"error": "rate_limited"})
         raw = await _read_limited(request, 8192)
@@ -145,7 +148,8 @@ def create_app(settings: Settings | None = None, *, stt: SpeechToText | None = N
         if not text.strip() or len(text) > settings.max_text_chars:
             raise HTTPException(400, {"error": "bad_text_length"})
         lang, age = robot_prefs(data.get("lang") or x_robot_lang, x_robot_age)
-        result = await run_in_threadpool(run_or_502, pipeline.run_text, dev.id, text, lang, age)
+        output = "text" if (x_robot_output or data.get("output") or "").lower() == "text" else "audio"
+        result = await run_in_threadpool(run_or_502, pipeline.run_text, dev.id, text, lang, age, output)
         return finish(dev, result)
 
     @app.get("/v1/turns/{turn_id}/audio")

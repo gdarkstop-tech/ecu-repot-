@@ -43,13 +43,21 @@ def _float(name: str, default: float) -> float:
 @dataclass(frozen=True)
 class Settings:
     # Providers: each one is swappable without touching the robot firmware.
-    stt_provider: str = "mock"      # mock | openai
+    stt_provider: str = "mock"      # mock | groq | openai | openai_compatible
     llm_provider: str = "mock"      # mock | anthropic | openai
     tts_provider: str = "mock"      # mock | espeak | openai
 
-    anthropic_model: str = "claude-opus-5-5"
-    anthropic_effort: str = "low"   # short spoken replies: low effort keeps latency down
-    anthropic_fallbacks: bool = True
+    # Claude Haiku 5.5: the fast, low-cost Claude model, chosen for short conversational replies.
+    anthropic_model: str = "claude-haiku-5-5"
+    anthropic_effort: str = "low"   # low effort = fastest, cheapest; raise for harder tutoring
+    anthropic_fallbacks: bool = True  # only sent to models that support server-side fallbacks
+    anthropic_max_tokens: int = 2048
+
+    stt_base_url: str = ""          # override the preset's endpoint
+    stt_model: str = ""             # override the preset's model
+    stt_response_format: str = ""   # "verbose_json" (Whisper: language + no-speech scores) or "json"
+    min_voiced_seconds: float = 0.25  # below this the audio is not sent to the paid STT at all
+    voice_rms: int = 150              # 16-bit RMS that counts as "voiced" (~ -47 dBFS)
 
     openai_base_url: str = "https://api.openai.com/v1"
     openai_llm_model: str = ""
@@ -80,9 +88,15 @@ class Settings:
             stt_provider=os.environ.get("STT_PROVIDER", "mock").lower(),
             llm_provider=os.environ.get("LLM_PROVIDER", "mock").lower(),
             tts_provider=os.environ.get("TTS_PROVIDER", default_tts).lower(),
-            anthropic_model=os.environ.get("ANTHROPIC_MODEL", "claude-opus-5-5"),
+            anthropic_model=os.environ.get("ANTHROPIC_MODEL", "claude-haiku-5-5"),
             anthropic_effort=os.environ.get("ANTHROPIC_EFFORT", "low"),
             anthropic_fallbacks=_bool("ANTHROPIC_FALLBACKS", True),
+            anthropic_max_tokens=_int("ANTHROPIC_MAX_TOKENS", 2048),
+            stt_base_url=os.environ.get("STT_BASE_URL", ""),
+            stt_model=os.environ.get("STT_MODEL", ""),
+            stt_response_format=os.environ.get("STT_RESPONSE_FORMAT", ""),
+            min_voiced_seconds=_float("MIN_VOICED_SECONDS", 0.25),
+            voice_rms=_int("VOICE_RMS", 150),
             openai_base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
             openai_llm_model=os.environ.get("OPENAI_LLM_MODEL", ""),
             openai_stt_model=os.environ.get("OPENAI_STT_MODEL", ""),

@@ -402,6 +402,9 @@ def step_robot(report: Report, link: RobotLink, args) -> None:
 def step_audio(report: Report, link: RobotLink, args) -> None:
     print("\n== 7. Audio hardware")
     G = "Audio"
+    link.send("status")
+    st = link.wait_for(lambda d: d.get("evt") == "status", 3) or {}
+    has_speaker = st.get("audio", {}).get("output") == "speech"
     if not args.audio:
         report.add(G, "INMP441 microphone", NOT_TESTED, "not requested (run with --audio once wired)")
         report.add(G, "MAX98357A speaker", NOT_TESTED, "not requested (run with --audio once wired)")
@@ -423,6 +426,9 @@ def step_audio(report: Report, link: RobotLink, args) -> None:
     report.add(G, "Microphone hears speech (speech vs quiet)", PASS if alive and gain >= 6 else FAIL,
                f"quiet {q.get('rms_dbfs')} dBFS, speech {s.get('rms_dbfs')} dBFS, difference {gain:.1f} dB",
                hint="Speak closer, or raise mic_gain (config).")
+    if not has_speaker:
+        report.add(G, "MAX98357A speaker", NOT_TESTED, "speaker setting is off: answers are shown as text on the OLED")
+        return
     link.request("tone", 2, hz=440, ms=1200)
     time.sleep(1.5)
     human(report, G, "Speaker plays test tone", "Did you hear a clear 1-second beep from the robot's speaker?", args,
@@ -476,7 +482,12 @@ def step_network(report: Report, link: RobotLink, args) -> None:
     ok = "reply" in stages
     report.add(G, "Gateway turn (text -> AI -> speech)", PASS if ok else FAIL,
                f"stages {stages}, {time.monotonic() - t0:.1f} s")
-    if ok and args.audio:
+    link.send("status")
+    st = link.wait_for(lambda d: d.get("evt") == "status", 3) or {}
+    if ok and st.get("audio", {}).get("output") == "text":
+        human(report, G, "Answer shown on the OLED", "Did the OLED show a happy face, then scroll an answer "
+              "saying that 7 plus 5 is 12?", args)
+    elif ok and args.audio:
         human(report, G, "Spoken reply heard", "Did the robot SAY that 7 plus 5 is 12?", args)
     link.request("mute", 2, on=True)
 

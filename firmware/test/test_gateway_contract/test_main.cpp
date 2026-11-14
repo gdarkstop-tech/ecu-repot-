@@ -102,6 +102,20 @@ void test_ignore_and_demo() {
   TEST_ASSERT_EQUAL((int)Expression::Surprised, (int)d.r.emotion);
 }
 
+void test_text_mode_replies_carry_full_answer_without_audio() {
+  const char* files[] = {"textmode_story_en.json", "textmode_story_ar.json", "textmode_math_ar.json"};
+  for (const char* f : files) {
+    Parsed p = parse(fixture(f));
+    TEST_ASSERT_TRUE_MESSAGE(p.ok, f);
+    TEST_ASSERT_FALSE_MESSAGE(p.r.hasAudio, f);  // no speaker: nothing to stream
+    TEST_ASSERT_TRUE_MESSAGE(strlen(p.r.longText) > 20, f);
+    TEST_ASSERT_TRUE(strlen(p.r.longText) <= kMaxLongTextBytes);
+    TEST_ASSERT_TRUE(utf8IsValid(p.r.longText));
+  }
+  TEST_ASSERT_TRUE(parse(fixture("textmode_story_ar.json")).r.longRtl);
+  TEST_ASSERT_FALSE(parse(fixture("textmode_story_en.json")).r.longRtl);
+}
+
 void test_hostile_audio_urls_rejected() {
   const char* bodies[] = {
       R"({"display":{},"audio":{"path":"https://evil.example/a","format":"pcm_s16le","sample_rate":16000}})",
@@ -141,6 +155,7 @@ int main() {
   RUN_TEST(test_long_arabic_story_fits_buffers);
   RUN_TEST(test_vocab_word_card);
   RUN_TEST(test_ignore_and_demo);
+  RUN_TEST(test_text_mode_replies_carry_full_answer_without_audio);
   RUN_TEST(test_hostile_audio_urls_rejected);
   RUN_TEST(test_hostile_fields_sanitised);
   return UNITY_END();

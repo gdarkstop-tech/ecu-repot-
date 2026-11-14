@@ -42,12 +42,14 @@ There are two interfaces. They are independent: the robot never needs the laptop
 | `tone` | `hz` (50–8000), `ms` (≤5000) | sine tone through the speaker |
 | `loopback` | `ms` (≤8000) | record then play back (ear test of mic + speaker) |
 | `wifi_scan` | | `wifi_scan` event |
-| `turn_text` | `text`, `lang` | sends text to the gateway as if spoken; plays the reply |
+| `turn_text` | `text`, `lang` | sends text to the gateway as if spoken; shows/plays the reply |
+| `read` | `text` (≤600 B), `rtl`, `ms` | shows text the way answers are shown without a speaker (SPEAKING + scrolling text) |
 
 **Settings keys** (`config`): `wifi_ssid` (≤32), `wifi_pass` (8–63, secret), `gateway_url`
 (`https://…`; `http://` only to private LAN IPs for development), `device_token` (16–128 chars
 `[A-Za-z0-9._-]`, secret), `lang` (auto/en/ar), `child_age` (3–12), `volume` (0–100), `mic_gain`
-(1–32), `oled_driver` (sh1106/ssd1306, reboot), `mic_channel` (left/right, reboot). Secret values
+(1–32), `oled_driver` (sh1106/ssd1306, reboot), `mic_channel` (left/right, reboot), `speaker`
+(on/off, reboot; **off by default**: answers are shown as scrolling text and no audio is requested). Secret values
 are never printed, logged or returned, and are never silently truncated (too long = rejected).
 
 ### State rules (enforced by the firmware, never by the AI)
@@ -75,7 +77,10 @@ i2c_lines, i2c_scan, oled, summary); send `r` for a fresh report or `s` to resca
 ## 2. Gateway API (robot → gateway)
 
 All requests: `Authorization: Bearer <device token>`, plus `X-Robot-Lang` (auto/en/ar),
-`X-Robot-Age` (3–12), `X-Robot-Fw`. HTTPS only in production.
+`X-Robot-Age` (3–12), `X-Robot-Fw`, and `X-Robot-Output: text` from a robot without a speaker
+(the gateway then skips text-to-speech, asks the model for ≤ 25 words, and adds
+`display.long_text` / `display.long_rtl`: the whole answer, shaped for the OLED, ≤ 600 bytes).
+HTTPS only in production.
 
 ### `POST /v1/turns` — one spoken utterance
 

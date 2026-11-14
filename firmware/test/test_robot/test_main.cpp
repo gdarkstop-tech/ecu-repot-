@@ -170,6 +170,20 @@ void test_selftest_runs_all_steps_and_finishes() {
   TEST_ASSERT_EQUAL((int)RobotState::Muted, (int)r.view(t).state);
 }
 
+void test_read_command_shows_text_and_clears_after_speaking() {
+  FakePlatform p;
+  Robot r(p, cfg());
+  r.begin(0);
+  r.tick(1000);
+  send(r, "{\"cmd\":\"read\",\"text\":\"Hello there, this is a test answer.\",\"ms\":3000}", 1100);
+  TEST_ASSERT_EQUAL((int)RobotState::Speaking, (int)r.view(1200).state);
+  TEST_ASSERT_EQUAL_STRING("Hello there, this is a test answer.", r.view(1200).readingText);
+  TEST_ASSERT_EQUAL_UINT32(3000, r.view(1200).readingDurationMs);
+  r.tick(4700);  // 3000 + 500 ms deadline
+  TEST_ASSERT_EQUAL((int)RobotState::Muted, (int)r.view(4700).state);
+  TEST_ASSERT_EQUAL_STRING("", r.view(4700).readingText);
+}
+
 void test_overflow_reports_error() {
   FakePlatform p;
   Robot r(p, cfg());
@@ -205,6 +219,7 @@ int main() {
   RUN_TEST(test_hardware_commands_delegated_and_errors_reported);
   RUN_TEST(test_status_never_contains_token);
   RUN_TEST(test_selftest_runs_all_steps_and_finishes);
+  RUN_TEST(test_read_command_shows_text_and_clears_after_speaking);
   RUN_TEST(test_overflow_reports_error);
   RUN_TEST(test_sleeping_face_after_inactivity_and_wake_on_command);
   return UNITY_END();

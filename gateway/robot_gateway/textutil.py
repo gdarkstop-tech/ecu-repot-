@@ -48,19 +48,45 @@ def first_sentence(text: str, max_chars: int) -> str:
     return cut + "..."
 
 
-def to_oled(text: str) -> tuple[str, bool]:
+def to_oled(text: str, max_bytes: int = OLED_MAX_BYTES) -> tuple[str, bool]:
     """Return (display_text, rtl). Arabic is reshaped and reordered for a display without
-    a shaping engine, and trimmed to fit the robot's buffer without splitting characters."""
+    a shaping engine, and trimmed (at a word, with "...") to fit the robot's buffer."""
     text = re.sub(r"\s+", " ", text).strip()
     if detect_language(text) != "ar":
-        out = text.encode("utf-8")[:OLED_MAX_BYTES].decode("utf-8", "ignore")
-        return out, False
+        if len(text.encode("utf-8")) <= max_bytes:
+            return text, False
+        cut = text.encode("utf-8")[: max_bytes - 3].decode("utf-8", "ignore").rsplit(" ", 1)[0]
+        return cut + "...", False
     logical = text
+    truncated = False
     while True:
-        visual = get_display(arabic_reshaper.reshape(logical))
-        if len(visual.encode("utf-8")) <= OLED_MAX_BYTES or len(logical) < 4:
+        shown = logical + ("..." if truncated else "")
+        visual = get_display(arabic_reshaper.reshape(shown))
+        if len(visual.encode("utf-8")) <= max_bytes or len(logical) < 4:
             return visual, True
         logical = logical[: int(len(logical) * 0.85)].rsplit(" ", 1)[0]
+        truncated = True
+
+
+# Phrases Whisper-style models are known to invent on silence or noise (YouTube-subtitle
+# artefacts in their training data). A transcript made only of these is not a child speaking.
+_HALLUCINATIONS = [
+    "thank you for watching", "thanks for watching", "please subscribe", "subscribe to the channel",
+    "like and subscribe", "see you next time", "you",
+    "ترجمة نانسي قنقر", "نانسي قنقر", "اشتركوا في القناة", "اشترك في القناة", "لا تنسوا الاشتراك",
+    "شكرا للمشاهدة", "شكرا على المشاهدة", "شكرا لكم على المشاهدة", "موسيقى", "music",
+]
+
+
+def is_probable_hallucination(text: str) -> bool:
+    t = normalise_answer(text)
+    if not t:
+        return True
+    for h in _HALLUCINATIONS:
+        nh = normalise_answer(h)
+        if t == nh or (len(nh) > 8 and nh in t and len(t) <= len(nh) + 12):
+            return True
+    return False
 
 
 def strip_for_speech(text: str) -> str:

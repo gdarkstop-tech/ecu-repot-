@@ -15,6 +15,7 @@ constexpr int kEyeRX = 92;
 constexpr int kEyeY = 28;
 constexpr float kTwoPi = 6.2831853f;
 constexpr size_t kMaxLineBytes = 200;  // > max text (160 B) + separators
+constexpr int kMaxReadingLines = 40;    // 600-byte answer at ~16 chars per line
 
 inline int clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
 inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
@@ -188,6 +189,10 @@ void FaceRenderer::render(u8g2_t* g, const ViewModel& vm, uint32_t now) {
 
   if (vm.overlayText[0]) {
     drawOverlayText(g, vm.overlayText, vm.overlayRtl);
+    return;
+  }
+  if (vm.state == RobotState::Speaking && vm.readingText[0] && reached(now, vm.readingSince)) {
+    drawReading(g, vm, now);
     return;
   }
   if (vm.state == RobotState::Learning && vm.contentKind != ContentKind::None) {
@@ -478,20 +483,16 @@ void FaceRenderer::drawContent(u8g2_t* g, const ViewModel& vm, uint32_t now) {
   }
 }
 
-// ------------------------------------------------------------------ text overlay
-void FaceRenderer::drawOverlayText(u8g2_t* g, const char* text, bool rtl) {
-  bool uni = utf8HasNonAscii(text);
-  u8g2_SetFont(g, uni ? u8g2_font_unifont_t_arabic : u8g2_font_6x12_tr);
-  const int lineH = uni ? 16 : 12;
-  const int maxLines = kHeight / lineH;
-  const int maxW = 124;
-
-  // Tokenise into words (start, len); '\n' becomes a forced break marker (len 0).
+// ------------------------------------------------------------------ word wrapping
+// Wraps UTF-8 text into lines no wider than maxW. LTR fills lines from the first word. RTL text
+// arrives already shaped and in visual order (from the gateway), so its logical start is the
+// RIGHTMOST word: lines are filled from the end of the string. '\n' forces a break.
+static int wrapText(u8g2_t* g, const char* text, bool rtl, int maxW, char (*lines)[kMaxLineBytes], int maxLines) {
   struct Tok { uint16_t start, len; };
-  static Tok toks[96];  // static: keep the render task stack small
+  static Tok toks[200];  // static: keep the render task stack small
   int nt = 0;
   size_t n = strlen(text);
-  for (size_t i = 0; i < n && nt < 96;) {
+  for (size_t i = 0; i < n && nt < 200;) {
     if (text[i] == '\n') { toks[nt++] = {(uint16_t)i, 0}; i++; continue; }
     if (text[i] == ' ') { i++; continue; }
     size_t j = i;
@@ -499,13 +500,9 @@ void FaceRenderer::drawOverlayText(u8g2_t* g, const char* text, bool rtl) {
     toks[nt++] = {(uint16_t)i, (uint16_t)(j - i)};
     i = j;
   }
-
-  static char lines[6][kMaxLineBytes];
-  int nl = 0;
   static char cand[kMaxLineBytes], word[kMaxLineBytes], trial[2 * kMaxLineBytes + 2];
+  int nl = 0;
   cand[0] = 0;
-  // LTR fills lines from the first word. Text arriving RTL is already in visual order
-  // (shaped by the gateway), so its logical start is the RIGHTMOST word: fill from the end.
   for (int k = 0; k < nt && nl < maxLines; k++) {
     const Tok& t = rtl ? toks[nt - 1 - k] : toks[k];
     if (t.len == 0) {
@@ -517,20 +514,67 @@ void FaceRenderer::drawOverlayText(u8g2_t* g, const char* text, bool rtl) {
     else if (rtl) snprintf(trial, sizeof(trial), "%s %s", word, cand);
     else snprintf(trial, sizeof(trial), "%s %s", cand, word);
     if (textWidth(g, trial) <= maxW || !cand[0]) {
-      strcpy(cand, trial);
+      copyRange(cand, sizeof(cand), trial, strlen(trial));
     } else {
       strcpy(lines[nl++], cand);
-      strcpy(cand, word);
+      copyRange(cand, sizeof(cand), word, strlen(word));
     }
   }
   if (cand[0] && nl < maxLines) strcpy(lines[nl++], cand);
+  return nl;
+}
 
+// ------------------------------------------------------------------ text overlay
+void FaceRenderer::drawOverlayText(u8g2_t* g, const char* text, bool rtl) {
+  bool uni = utf8HasNonAscii(text);
+  u8g2_SetFont(g, uni ? u8g2_font_unifont_t_arabic : u8g2_font_6x12_tr);
+  const int lineH = uni ? 16 : 12;
+  static char lines[6][kMaxLineBytes];
+  int nl = wrapText(g, text, rtl, 124, lines, kHeight / lineH);
   int top = (kHeight - nl * lineH) / 2;
   int asc = u8g2_GetAscent(g);
   for (int i = 0; i < nl; i++) {
     int w = textWidth(g, lines[i]);
     int x = rtl ? (kWidth - 2 - w) : (kWidth - w) / 2;
     u8g2_DrawUTF8(g, (u8g2_uint_t)clampi(x, 0, kWidth), (u8g2_uint_t)(top + i * lineH + asc + (lineH - asc) / 2), lines[i]);
+  }
+}
+
+// ------------------------------------------------------------------ reading view
+// The robot's answer as scrolling text (used when no speaker is installed). Whole lines only:
+// partial glyph rows are hard to read on a 1.3" display. The scroll is paced so the last line
+// is reached within readingDurationMs, with a pause on the first and last page.
+void FaceRenderer::drawReading(u8g2_t* g, const ViewModel& vm, uint32_t now) {
+  bool uni = utf8HasNonAscii(vm.readingText);
+  u8g2_SetFont(g, uni ? u8g2_font_unifont_t_arabic : u8g2_font_6x12_tr);
+  const int lineH = uni ? 16 : 12;
+  const int visible = kHeight / lineH;  // 4 Arabic / 5 Latin lines
+  static char lines[kMaxReadingLines][kMaxLineBytes];
+  int nl = wrapText(g, vm.readingText, vm.readingRtl, 121, lines, kMaxReadingLines);
+  int asc = u8g2_GetAscent(g);
+  int first = 0;
+  int top = 0;
+  if (nl <= visible) {
+    top = (kHeight - nl * lineH) / 2;  // short answer: centred, no scrolling
+  } else {
+    uint32_t t = now - vm.readingSince;
+    const uint32_t holdStart = 1500, holdEnd = 1500;
+    int steps = nl - visible;
+    uint32_t span = vm.readingDurationMs > holdStart + holdEnd + 600 ? vm.readingDurationMs - holdStart - holdEnd : 600;
+    uint32_t stepMs = span / (uint32_t)steps;
+    if (stepMs < 600) stepMs = 600;
+    first = t < holdStart ? 0 : clampi((int)((t - holdStart) / stepMs), 0, steps);
+    // Scroll bar on the right edge.
+    int barH = clampi(kHeight * visible / nl, 6, kHeight);
+    int barY = (kHeight - barH) * first / steps;
+    u8g2_DrawVLine(g, 126, 0, kHeight);
+    u8g2_DrawBox(g, 125, (u8g2_uint_t)barY, 3, (u8g2_uint_t)barH);
+  }
+  for (int i = 0; i < visible && first + i < nl; i++) {
+    const char* line = lines[first + i];
+    int w = textWidth(g, line);
+    int x = vm.readingRtl ? (122 - w) : 1;
+    u8g2_DrawUTF8(g, (u8g2_uint_t)clampi(x, 0, kWidth), (u8g2_uint_t)(top + i * lineH + asc + (lineH - asc) / 2), line);
   }
 }
 

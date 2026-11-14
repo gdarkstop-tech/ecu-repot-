@@ -16,4 +16,10 @@ bool utf8IsValid(const char* s);
 // True if s contains any byte >= 0x80 (i.e. needs a Unicode font).
 bool utf8HasNonAscii(const char* s);
 
+// Number of code points (characters) in s.
+size_t utf8Length(const char* s);
+
+// How long a child needs to read `text` on the OLED (ms): longer for Arabic, clamped 4..60 s.
+uint32_t readingTimeMs(const char* text, bool rtl);
+
 }  // namespace robot

@@ -71,7 +71,10 @@ void Robot::begin(uint32_t now) {
 void Robot::onTransition(RobotState from, RobotState to, TransitionReason why, void* ctx) {
   Robot* self = static_cast<Robot*>(ctx);
   if (from == RobotState::Learning && to != RobotState::Learning) self->clearContent();
-  if (from == RobotState::Speaking && to != RobotState::Speaking) self->marquee_[0] = 0;
+  if (from == RobotState::Speaking && to != RobotState::Speaking) {
+    self->marquee_[0] = 0;
+    self->reading_[0] = 0;
+  }
   JsonDocument doc;
   doc["evt"] = "state";
   doc["from"] = toString(from);
@@ -188,6 +191,14 @@ void Robot::handleCommand(const DebugCommand& cmd, uint32_t now) {
       ack(cmd.id, ok, ok ? nullptr : toString(r), nullptr, cmd.truncated, toString(sm_.state()));
       return;
     }
+    case CmdType::Read: {
+      uint32_t ms = cmd.ms ? cmd.ms : readingTimeMs(cmd.longText, cmd.rtl);
+      TransitionResult r = requestState(RobotState::Speaking, now, ms + 500);
+      bool ok = r == TransitionResult::Ok || r == TransitionResult::Unchanged;
+      if (ok) showReading(cmd.longText, cmd.rtl, now, ms);
+      ack(cmd.id, ok, ok ? nullptr : toString(r), nullptr, cmd.truncated, toString(sm_.state()));
+      return;
+    }
     case CmdType::Mute:
       setMuted(cmd.on, now);
       ack(cmd.id, true, nullptr, nullptr, false, toString(sm_.state()));
@@ -255,6 +266,7 @@ void Robot::emitStatus(uint32_t now) {
   audio["mic_enabled"] = info.micEnabled;
   audio["mic_signal"] = info.micSignal;
   audio["speaker_enabled"] = info.speakerEnabled;
+  audio["output"] = info.speakerConfigured ? "speech" : "text";
   audio["volume"] = info.volume;
   JsonObject wifi = doc["wifi"].to<JsonObject>();
   wifi["configured"] = info.wifiConfigured;
@@ -348,10 +360,18 @@ void Robot::setMarquee(const char* text, bool rtl, uint32_t now) {
   marqueeSince_ = now;
 }
 
+void Robot::showReading(const char* text, bool rtl, uint32_t startAt, uint32_t durationMs) {
+  utf8CopyTruncate(reading_, sizeof(reading_), text);
+  readingRtl_ = rtl;
+  readingSince_ = startAt;
+  readingMs_ = durationMs;
+}
+
 void Robot::clearAll(uint32_t now) {
   overrideActive_ = false;
   overlay_[0] = 0;
   marquee_[0] = 0;
+  reading_[0] = 0;
   clearContent();
   selftestStep_ = 0;
   if (!sm_.inStartup()) sm_.request(RobotState::Idle, now);
@@ -430,6 +450,10 @@ const ViewModel& Robot::view(uint32_t now) {
   vm_.marqueeRtl = marqueeRtl_;
   vm_.marqueeSince = marqueeSince_;
   vm_.errorCode = sm_.errorCode();
+  vm_.readingText = reading_;
+  vm_.readingRtl = readingRtl_;
+  vm_.readingSince = readingSince_;
+  vm_.readingDurationMs = readingMs_;
   vm_.selftestStep = selftestStep_ ? (uint8_t)(selftestStep_ - 1) : 0;
   vm_.selftestTotal = selftestStep_ ? kSelftestCount : 0;
   return vm_;

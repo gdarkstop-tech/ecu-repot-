@@ -11,7 +11,7 @@ namespace robot {
 namespace {
 const char* const kCmdNames[] = {"ping",   "hello",    "status",     "state", "face",     "text",      "show",
                                  "say",    "mute",     "clear",      "selftest", "config", "config_get", "reboot",
-                                 "i2c_scan", "mic_test", "tone",     "wifi_scan", "turn_text", "loopback"};
+                                 "i2c_scan", "mic_test", "tone",     "wifi_scan", "turn_text", "loopback", "read"};
 static_assert(sizeof(kCmdNames) / sizeof(kCmdNames[0]) == (size_t)CmdType::kCount, "cmd names");
 
 bool lookupCmd(const char* s, CmdType& out) {
@@ -151,6 +151,9 @@ ParseError parseCommand(const char* line, size_t len, DebugCommand& out, const c
     case CmdType::Text:
     case CmdType::Say:
       pe = readString(o, "text", out.text, sizeof(out.text), true, false, out.truncated, detail);
+      break;
+    case CmdType::Read:
+      pe = readString(o, "text", out.longText, sizeof(out.longText), true, false, out.truncated, detail);
       break;
     case CmdType::TurnText:
       pe = readString(o, "text", out.text, sizeof(out.text), true, false, out.truncated, detail);

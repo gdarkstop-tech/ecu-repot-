@@ -36,6 +36,10 @@ bool parseGatewayReply(const char* body, size_t len, GatewayReply& out, char* au
   if (!utf8IsValid(oled)) return false;
   utf8CopyTruncate(r.oledText, sizeof(r.oledText), oled);
   r.rtl = disp["rtl"] | false;
+  const char* longText = disp["long_text"] | "";
+  if (!utf8IsValid(longText)) return false;
+  utf8CopyTruncate(r.longText, sizeof(r.longText), longText);
+  r.longRtl = disp["long_rtl"] | false;
   JsonObjectConst content = disp["content"];
   if (!content.isNull()) {
     ContentKind k;

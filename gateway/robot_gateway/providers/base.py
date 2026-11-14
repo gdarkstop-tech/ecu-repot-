@@ -33,6 +33,8 @@ class LlmResult:
     refused: bool = False
     truncated: bool = False
     model: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 @dataclass

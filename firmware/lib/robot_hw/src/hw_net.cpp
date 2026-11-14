@@ -200,6 +200,11 @@ void GatewayClient::run() {
 bool GatewayClient::parseReply(const char* body, size_t len, char* audioPath, size_t pathCap, uint32_t& audioRate) {
   GatewayReply r;
   if (!parseGatewayReply(body, len, r, audioPath, pathCap, audioRate)) return false;
+  if (!spk_->installed()) {
+    // Never try to stream or play audio without a speaker.
+    r.hasAudio = false;
+    audioPath[0] = 0;
+  }
   xSemaphoreTake(mtx_, portMAX_DELAY);
   reply_ = r;
   xSemaphoreGive(mtx_);
@@ -231,6 +236,8 @@ void GatewayClient::execute() {
   http.addHeader("X-Robot-Lang", job_ == Job::Text ? lang_ : s_->lang);
   http.addHeader("X-Robot-Age", String(s_->childAge));
   http.addHeader("X-Robot-Fw", ROBOT_FW_VERSION);
+  // No speaker: ask for the full answer as text and no speech audio (saves time and TTS cost).
+  if (!spk_->installed()) http.addHeader("X-Robot-Output", "text");
 
   int code;
   if (job_ == Job::Utterance) {

@@ -55,7 +55,8 @@ def main() -> int:
         gif_frames[0].save(
             out / f"{name}.gif", save_all=True, append_images=gif_frames[1:], duration=66, loop=0, optimize=True
         )
-        pick = {"boot": frames[int(len(frames) * 0.45)], "blink": frames[min(2, len(frames) - 1)]}.get(name, frames[len(frames) // 2])
+        pick = {"boot": frames[int(len(frames) * 0.45)], "blink": frames[min(2, len(frames) - 1)],
+                "reading_en": frames[min(30, len(frames) - 1)], "reading_ar": frames[min(30, len(frames) - 1)]}.get(name, frames[len(frames) // 2])
         tiles.append((name, frame_to_image(pick, 3)))
 
     cols = 4

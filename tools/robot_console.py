@@ -8,7 +8,9 @@
 Console commands (anything starting with '{' is sent as raw JSON):
     face happy | state LISTENING | text Hello | show letter A | say Hi there | mute on|off
     status | ping | selftest | mic 3000 | tone 440 | loopback | wifi | ask <question> | config_get
-    set <key> <value>   (wifi_ssid, gateway_url, lang, child_age, volume, mic_gain, oled_driver, mic_channel)
+    read <text>        show text the way an answer is shown without a speaker
+    set <key> <value>   (wifi_ssid, gateway_url, lang, child_age, volume, mic_gain, oled_driver, mic_channel,
+                         speaker on|off)
     secret <key>        (wifi_pass / device_token, typed hidden)
     reboot | quit
 """
@@ -63,12 +65,17 @@ def provision(link: RobotLink) -> None:
     token = getpass.getpass("Device token from 'python -m robot_gateway.devices add' (hidden): ").strip()
     lang = input("Language [auto/en/ar] (auto): ").strip() or "auto"
     age = input("Child's age [3-12] (6): ").strip() or "6"
+    spk = input("Is the MAX98357A speaker installed? [y/N] (no = answers shown as text on the OLED): ")
+    speaker = "on" if spk.strip().lower() in ("y", "yes") else "off"
     for key, value in [("wifi_ssid", ssid), ("wifi_pass", pw), ("gateway_url", url), ("device_token", token),
-                       ("lang", lang), ("child_age", age)]:
+                       ("lang", lang), ("child_age", age), ("speaker", speaker)]:
         a = link.request("config", 3, key=key, value=value)
         status = "ok" if a and a.get("ok") else f"REJECTED ({a.get('err') if a else 'no answer'})"
         print(f"  {key}: {status}")
-    print("\nWaiting for Wi-Fi...")
+    link.request("reboot", 3)  # the speaker/output setting takes effect after a restart
+    print("\nRestarting the robot to apply the settings...")
+    time.sleep(6)
+    print("Waiting for Wi-Fi...")
     for _ in range(15):
         link.send("status")
         st = link.wait_for(lambda d: d.get("evt") == "status", 3) or {}
@@ -114,6 +121,8 @@ def repl(link: RobotLink) -> None:
             link.send("mute", on=rest != "off")
         elif cmd == "ask":
             link.send("turn_text", text=rest)
+        elif cmd == "read":
+            link.send("read", text=rest)
         elif cmd == "set":
             key, _, value = rest.partition(" ")
             link.send("config", key=key, value=value)

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "conversation.h"
+#include "utf8.h"
 
 using namespace robot;
 
@@ -223,6 +224,29 @@ void test_reply_with_content_shows_learning_card() {
   TEST_ASSERT_EQUAL_STRING("B", r.robot.view(r.t).contentValue);
 }
 
+void test_text_only_reply_happy_then_paced_reading_then_listens() {
+  Rig r;
+  r.robot.setMuted(false, r.t);
+  r.conv.submitText("why is the sky blue", "en", r.t);
+  const char* answer = "Sunlight has many colors. The air scatters blue light the most, so the sky looks blue to us.";
+  snprintf(r.gw.reply.longText, sizeof(r.gw.reply.longText), "%s", answer);
+  r.gw.reply.hasAudio = false;  // robot without a speaker
+  r.gw.next = GatewayPoll::Reply;
+  r.run(false, 1);
+  const ViewModel& v = r.robot.view(r.t);
+  TEST_ASSERT_EQUAL((int)RobotState::Speaking, (int)v.state);
+  TEST_ASSERT_EQUAL((int)Expression::Happy, (int)v.expression);  // happy face first
+  TEST_ASSERT_EQUAL_STRING(answer, v.readingText);
+  TEST_ASSERT_TRUE(v.readingSince > r.t);                          // text starts after the intro
+  uint32_t hold = 1200 + readingTimeMs(answer, false);
+  r.run(false, (int)(hold / 20) - 10);
+  TEST_ASSERT_EQUAL((int)RobotState::Speaking, (int)r.state());    // still being read
+  r.run(false, 40);
+  TEST_ASSERT_EQUAL((int)RobotState::Listening, (int)r.state());   // then ready for the next question
+  TEST_ASSERT_EQUAL_STRING("", r.robot.view(r.t).readingText);
+  TEST_ASSERT_EQUAL(0, r.audio.stops);                              // never touched audio output
+}
+
 void test_missing_audio_does_not_hang() {
   Rig r;
   r.robot.setMuted(false, r.t);
@@ -245,6 +269,7 @@ int main() {
   RUN_TEST(test_offline_speech_is_not_sent_and_says_so);
   RUN_TEST(test_mute_mid_utterance_drops_capture);
   RUN_TEST(test_reply_with_content_shows_learning_card);
+  RUN_TEST(test_text_only_reply_happy_then_paced_reading_then_listens);
   RUN_TEST(test_missing_audio_does_not_hang);
   return UNITY_END();
 }

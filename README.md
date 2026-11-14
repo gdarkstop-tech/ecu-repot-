@@ -8,6 +8,10 @@ development**: in normal use the robot runs on a power bank and talks to the gat
 **New laptop? Start here: [docs/GETTING_STARTED_WINDOWS.md](docs/GETTING_STARTED_WINDOWS.md)**
 (download, open in VS Code + PlatformIO, find the COM port, flash and test).
 
+**Talk to Claude (microphone + Wi-Fi, answers on the OLED, no speaker needed):
+[docs/CLAUDE_SETUP.md](docs/CLAUDE_SETUP.md)** — accounts, costs, putting the gateway online,
+provisioning, first conversation.
+
 Code: https://github.com/gdarkstop-tech/ecu-repot- · branch `claude/vigilant-gauss-lvs43y`
 
 ![OLED gallery rendered by the firmware's own drawing code](docs/media/oled_gallery.png)
@@ -130,8 +134,8 @@ Google Cloud Run, Fly.io, Render, Railway, or a VPS behind Caddy. Set the variab
 
 | Setting | Options |
 |---|---|
-| `LLM_PROVIDER` | `mock` (tutor + demo answers), `anthropic` (Claude, default model `claude-opus-5-5`, effort `low`, server-side refusal fallbacks on), `openai` (ChatGPT or any OpenAI-compatible server) |
-| `STT_PROVIDER` | `mock`, `openai` (set `OPENAI_STT_MODEL` to a current model with Arabic support) |
+| `LLM_PROVIDER` | `mock` (tutor + demo answers), `anthropic` (Claude, default model `claude-haiku-5-5`, effort `low`), `openai` (ChatGPT or any OpenAI-compatible server) |
+| `STT_PROVIDER` | `mock`, `groq` (Whisper Large v3 Turbo, Arabic + English), `openai` (set `STT_MODEL`) |
 | `TTS_PROVIDER` | `espeak` (free, robotic), `openai` (`OPENAI_TTS_MODEL`), `mock` (chime) |
 
 Test a deployment from the laptop exactly as the robot would:

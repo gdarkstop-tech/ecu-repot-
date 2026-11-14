@@ -97,6 +97,7 @@ void runGallery(const char* dir) {
       "ﺮﺸﻋ ﻲﻨﺛﺍ ﻱﻭﺎﺴﻳ ﺔﺴﻤﺧ ﺪﺋﺍﺯ "
       "ﺔﻌﺒﺳ";  // سبعة زائد خمسة يساوي اثني عشر
 
+  const std::string arAnswer = "\u061F\uFED5\uFEAD\uFEAF\uFEF7\uFE8D \uFEE5\uFEEE\uFEE0\uFEDF\uFE8D \uFE90\uFEA4\uFE97 \uFEDE\uFEEB .\uFEE5\uFE8D\uFEEE\uFEDF\uFEF7\uFE8D \uFEF2\uFED7\uFE8E\uFE91 \uFEE6\uFEE3 \uFEAE\uFE9C\uFEDB\uFE83 \uFED5\uFEAD\uFEAF\uFEF7\uFE8D \uFE80\uFEEE\uFEC0\uFEDF\uFE8D \uFEAE\uFEB8\uFEE8\uFEF3 \uFE80\uFE8D\uFEEE\uFEEC\uFEDF\uFE8D \uFEE5\uFEF7 \uFE80\uFE8E\uFED7\uFEAD\uFEAF \uFE80\uFE8E\uFEE4\uFEB4\uFEDF\uFE8D";
   std::vector<Scene> scenes = {
       {"boot", {}, 2400, false, 0, false, false, 0},
       {"idle", {}, 6000, true, 0, false, false, 0},
@@ -125,6 +126,12 @@ void runGallery(const char* dir) {
       {"text_en", {"{\"cmd\":\"text\",\"text\":\"Hello! I am your learning robot. Ask me anything.\",\"ms\":9000}"}, 1500, true, 0, false, false, 0},
       {"text_ar", {std::string("{\"cmd\":\"text\",\"rtl\":true,\"ms\":9000,\"text\":\"") + arSentence + "\"}"}, 1500, true, 0, false, false, 0},
       {"offline", {}, 2500, true, 0, false, true, 0},
+      // Text-only answers (robot without a speaker): paced line-by-line scrolling.
+      {"reading_en",
+       {"{\"cmd\":\"read\",\"ms\":9000,\"text\":\"The sky looks blue because air scatters blue sunlight more than the other colors. Do you like blue?\"}"},
+       9000, true, 0, false, false, 0},
+      {"reading_ar", {std::string("{\"cmd\":\"read\",\"rtl\":true,\"ms\":9000,\"text\":\"") + arAnswer + "\"}"},
+       9000, true, 0, false, false, 0},
   };
 
   for (const Scene& sc : scenes) {

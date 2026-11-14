@@ -43,6 +43,11 @@ def main() -> None:
     for name, text in cases.items():
         r = c.post("/v1/turns/text", headers=h, json={"text": text})
         (OUT / f"{name}.json").write_text(r.text, encoding="utf-8")
+    text_mode = {**h, "X-Robot-Output": "text"}
+    for name, text in {"textmode_story_en": "tell me a story", "textmode_story_ar": "احك لي قصة",
+                       "textmode_math_ar": "كم سبعة زائد خمسة؟"}.items():
+        r = c.post("/v1/turns/text", headers=text_mode, json={"text": text})
+        (OUT / f"{name}.json").write_text(r.text, encoding="utf-8")
     silence = b"\x00\x00" * 16000
     r = c.post("/v1/turns", headers={**h, "Content-Type": "audio/L16;rate=16000;channels=1"}, content=silence)
     (OUT / "ignore.json").write_text(r.text, encoding="utf-8")

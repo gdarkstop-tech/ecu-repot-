@@ -46,6 +46,22 @@ bool utf8IsValid(const char* s) {
   return true;
 }
 
+size_t utf8Length(const char* s) {
+  size_t n = 0;
+  for (const uint8_t* p = (const uint8_t*)s; p && *p; p++) {
+    if ((*p & 0xC0) != 0x80) n++;
+  }
+  return n;
+}
+
+uint32_t readingTimeMs(const char* text, bool rtl) {
+  uint32_t chars = (uint32_t)utf8Length(text);
+  uint32_t ms = 2000 + chars * (rtl ? 150u : 100u);
+  if (ms < 4000) ms = 4000;
+  if (ms > 60000) ms = 60000;
+  return ms;
+}
+
 bool utf8HasNonAscii(const char* s) {
   if (!s) return false;
   for (const uint8_t* p = (const uint8_t*)s; *p; p++) {

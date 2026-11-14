@@ -15,6 +15,7 @@ namespace robot {
 
 constexpr int kProtocolVersion = 1;
 constexpr size_t kMaxTextBytes = 160;   // UTF-8 bytes (~50 Arabic letters, ~160 Latin)
+constexpr size_t kMaxLongTextBytes = 600;  // full answer shown as scrolling text (no speaker)
 constexpr size_t kMaxValueBytes = 32;
 constexpr size_t kMaxKeyBytes = 24;
 constexpr uint32_t kMaxDurationMs = 600000;
@@ -40,6 +41,7 @@ enum class CmdType : uint8_t {
   WifiScan,
   TurnText,   // send text to the AI gateway as if it had been spoken (tests network+TTS+speaker)
   Loopback,   // record N ms then play it back (mic + speaker check by ear)
+  Read,       // show a full answer as scrolling text (the no-speaker output mode)
   kCount
 };
 const char* toString(CmdType t);
@@ -58,6 +60,7 @@ struct DebugCommand {
   char text[kMaxTextBytes + 1] = {0};    // text / say / caption / config value / turn_text
   char value[kMaxValueBytes + 1] = {0};  // show value / turn_text language
   char key[kMaxKeyBytes + 1] = {0};      // config key
+  char longText[kMaxLongTextBytes + 1] = {0};  // read
 };
 
 enum class ParseError : uint8_t {
