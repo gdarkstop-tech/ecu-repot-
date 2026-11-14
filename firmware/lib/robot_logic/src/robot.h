@@ -87,6 +87,7 @@ class Robot {
   // Emits {"evt":...} lines on the debug link (no-op cost if nobody listens).
   void emitRaw(const char* jsonLine) { platform_.writeLine(jsonLine); }
   void emitLog(const char* level, const char* msg);
+  void publishStatus(uint32_t now) { emitStatus(now); }
 
   const ViewModel& view(uint32_t now);
   StateMachine& stateMachine() { return sm_; }

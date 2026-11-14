@@ -14,7 +14,7 @@ BUILD   := build
 CXX ?= g++
 CC  ?= gcc
 CFLAGS   := -O2 -ffunction-sections -fdata-sections -I$(U8G2)
-CXXFLAGS := -O2 -std=gnu++17 -Wall -Wextra -ffunction-sections -fdata-sections \
+CXXFLAGS := -O2 -std=gnu++17 -Wall -Wextra -ffunction-sections -fdata-sections -I$(LIBDEPS)/U8g2/src \
             -I$(U8G2) -I$(AJSON) -I../lib/robot_logic/src -I../lib/robot_ui/src -DROBOT_NATIVE=1
 
 U8G2_SRC := $(wildcard $(U8G2)/*.c)

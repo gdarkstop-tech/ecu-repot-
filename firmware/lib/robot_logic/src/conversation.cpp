@@ -1,6 +1,5 @@
 #include "conversation.h"
 
-#include <ArduinoJson.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -92,8 +91,12 @@ void Conversation::onSpeechEnd(uint32_t now) {
     failures_++;
     snprintf(lastError_, sizeof(lastError_), "offline");
     emitTurnEvent("not_sent", "offline");
-    robot_.setExpressionOverride(Expression::Sad, now, 1500);
-    robot_.requestState(RobotState::Idle, now);
+    if (offlineFn_) {
+      offlineFn_(now, offlineCtx_);
+    } else {
+      robot_.setExpressionOverride(Expression::Sad, now, 1500);
+      robot_.requestState(RobotState::Idle, now);
+    }
     return;
   }
   phase_ = Phase::Processing;

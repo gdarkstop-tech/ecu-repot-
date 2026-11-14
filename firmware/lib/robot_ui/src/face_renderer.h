@@ -7,7 +7,7 @@
 // What to show is decided by Robot and delivered as a ViewModel each frame.
 #pragma once
 #include <stdint.h>
-#include <u8g2.h>
+#include <clib/u8g2.h>
 
 #include "view_model.h"
 

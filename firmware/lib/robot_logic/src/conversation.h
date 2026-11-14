@@ -76,6 +76,14 @@ class Conversation {
   void onMicFrame(const int16_t* pcm, size_t n, uint32_t now);
   void tick(uint32_t now);
 
+  // Called at end of speech when the gateway is unreachable (e.g. advance offline cards).
+  // Without a handler the robot shows a brief sad face and stays put.
+  using OfflineFn = void (*)(uint32_t now, void* ctx);
+  void setOfflineHandler(OfflineFn fn, void* ctx) {
+    offlineFn_ = fn;
+    offlineCtx_ = ctx;
+  }
+
   // Debug/test path: behave as if `text` had been spoken.
   bool submitText(const char* text, const char* lang, uint32_t now);
 
@@ -102,6 +110,8 @@ class Conversation {
   uint32_t phaseSince_ = 0;
   bool audioSeen_ = false;
   GatewayReply reply_;
+  OfflineFn offlineFn_ = nullptr;
+  void* offlineCtx_ = nullptr;
   uint32_t turns_ = 0;
   uint32_t failures_ = 0;
   char lastError_[48] = {0};

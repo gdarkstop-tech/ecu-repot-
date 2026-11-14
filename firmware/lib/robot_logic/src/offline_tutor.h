@@ -19,6 +19,10 @@ class OfflineTutor {
 
   void start(Robot& r, uint32_t now);
   void stop() { active_ = false; }
+  // Re-show the current card (after the child spoke) without restarting the activity.
+  void resume(Robot& r, uint32_t now) {
+    if (active_) show(r, now);
+  }
   bool active() const { return active_; }
 
   void next(Robot& r, uint32_t now);
