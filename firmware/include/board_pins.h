@@ -50,7 +50,7 @@
 #define PIN_MOTOR_AIN2 40
 #define PIN_MOTOR_BIN1 41
 #define PIN_MOTOR_BIN2 42
-// AI-Thinker ESP32-CAM: separate MCU. Planned link is Wi-Fi (camera -> gateway),
-// optional UART1 control link on GPIO1 (TX) / GPIO2 (RX).
+// AI-Thinker ESP32-CAM: separate MCU, NOT implemented yet (docs/CAMERA_PLAN.md).
+// Planned: UART1 link, S3 GPIO1 (TX) -> CAM GPIO13, CAM GPIO14 -> S3 GPIO2 (RX); CAM has no Wi-Fi.
 #define PIN_CAM_UART_TX 1
 #define PIN_CAM_UART_RX 2

@@ -5,6 +5,11 @@ INMP441 microphone, thinks with a cloud AI gateway, answers through a MAX98357A 
 shows an animated face and learning cards on an SH1106 OLED. **The laptop is only for
 development**: in normal use the robot runs on a power bank and talks to the gateway over Wi-Fi.
 
+**New laptop? Start here: [docs/GETTING_STARTED_WINDOWS.md](docs/GETTING_STARTED_WINDOWS.md)**
+(download, open in VS Code + PlatformIO, find the COM port, flash and test).
+
+Code: https://github.com/gdarkstop-tech/ecu-repot- · branch `claude/vigilant-gauss-lvs43y`
+
 ![OLED gallery rendered by the firmware's own drawing code](docs/media/oled_gallery.png)
 
 *Frames above are rendered on a PC by the firmware's renderer through the real U8g2 library
@@ -50,17 +55,13 @@ docs/            ARCHITECTURE, WIRING, PROTOCOL, HARDWARE_VERIFICATION_REPORT, m
 powershell -ExecutionPolicy Bypass -File tools\setup_windows.ps1
 ```
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
 ## 2. Phase 1 — board + OLED test (one command)
 
 Wire the OLED only ([docs/WIRING.md](docs/WIRING.md): VCC→3V3, GND→GND, SDA→GPIO8, SCL→GPIO9),
 plug the board in with a **data** USB-C cable, then:
 
 ```powershell
-python tools\verify_hardware.py
+.venv\Scripts\python.exe tools\verify_hardware.py
 ```
 
 It detects the port, reads the chip/flash/PSRAM with esptool, flashes and reads the **diagnostic
@@ -92,7 +93,7 @@ pio run -e robot -t upload
 Wire the INMP441 and MAX98357A ([docs/WIRING.md](docs/WIRING.md)), then:
 
 ```powershell
-python tools\verify_hardware.py --audio --skip-flash
+.venv\Scripts\python.exe tools\verify_hardware.py --audio --skip-flash
 ```
 
 It measures the mic in silence vs. speech, plays a tone, and does a record-and-play-back test.
@@ -111,13 +112,13 @@ cd gateway
 ```
 
 ```powershell
-python -m robot_gateway.devices add robot-1 --file devices.json
+..\.venv\Scripts\python.exe -m robot_gateway.devices add robot-1 --file devices.json
 ```
 
 **Run locally** (for a first test on your LAN; the robot accepts `http://` only to private IPs):
 
 ```powershell
-uvicorn --factory robot_gateway.app:app_factory --host 0.0.0.0 --port 8080
+..\.venv\Scripts\python.exe -m uvicorn --factory robot_gateway.app:app_factory --host 0.0.0.0 --port 8080
 ```
 
 **Deploy** (so the laptop can be off): build the container in `gateway/` on any host with HTTPS —
@@ -136,20 +137,20 @@ Google Cloud Run, Fly.io, Render, Railway, or a VPS behind Caddy. Set the variab
 Test a deployment from the laptop exactly as the robot would:
 
 ```powershell
-python tools\gateway_client.py --url https://YOUR-GATEWAY --token rbt_... --text "what is 7 plus 5?"
+.venv\Scripts\python.exe tools\gateway_client.py --url https://YOUR-GATEWAY --token rbt_... --text "what is 7 plus 5?"
 ```
 
 ## 5. Provision the robot (over USB, once)
 
 ```powershell
-python tools\robot_console.py provision
+.venv\Scripts\python.exe tools\robot_console.py provision
 ```
 
 Enter the Wi-Fi name/password (2.4 GHz), gateway URL and device token. Secrets are typed hidden,
 stored in the robot's flash, and never printed back. Then check with `--skip-flash`:
 
 ```powershell
-python tools\verify_hardware.py --skip-flash --audio
+.venv\Scripts\python.exe tools\verify_hardware.py --skip-flash --audio
 ```
 
 ## 6. Using the robot
@@ -204,6 +205,7 @@ Regenerate generated sources: `tools/gen_offline_content.py` (pre-shaped Arabic 
 
 | Symptom | Check |
 |---|---|
+| Wrong board / ESP32-CAM picked | Unplug the ESP32-CAM-MB, or pass `--port COMx` (`--list-ports` shows each port's chip) |
 | No COM port | Data cable (not charge-only); other USB-C port; CP210x/CH343 driver; BOOT+RESET to force download mode |
 | Upload fails "Failed to connect" | Close serial monitors; hold BOOT while upload starts |
 | OLED not found at 0x3C/0x3D | VCC on 3V3, SDA/SCL not swapped (8 = SDA, 9 = SCL), module is the 4-pin I2C version |
@@ -215,5 +217,6 @@ Regenerate generated sources: `tools/gen_offline_content.py` (pre-shaped Arabic 
 | `auth_rejected` on the face | Token wrong/revoked: provision `device_token` again |
 | `net_or_tls_error` | Gateway URL/HTTPS; if your host's certificate uses another root CA, add it in `tools/gen_ca_roots.py` |
 
+Camera (not implemented yet): [docs/CAMERA_PLAN.md](docs/CAMERA_PLAN.md) ·
 Architecture and security: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · Protocols:
 [docs/PROTOCOL.md](docs/PROTOCOL.md) · Wiring: [docs/WIRING.md](docs/WIRING.md)

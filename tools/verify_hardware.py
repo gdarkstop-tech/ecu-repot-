@@ -129,6 +129,43 @@ def run(cmd: list[str], cwd: Path | None = None, timeout: int = 900) -> tuple[in
         return 124, "timeout"
 
 
+def probe_chip(port: str) -> str | None:
+    """Ask the chip on `port` what it is (esptool briefly resets that board; harmless)."""
+    code, out = run([sys.executable, "-m", "esptool", "--port", port, "chip_id"], timeout=60)
+    m = re.search(r"Chip (?:is|type:)\s*(.+)", out)
+    return m.group(1).strip() if (code == 0 and m) else None
+
+
+def choose_port(ports: list, probe) -> tuple[str | None, list[str]]:
+    """Pick the ESP32-S3 among USB serial ports. Returns (port or None, notes).
+
+    USB ids cannot tell an ESP32-S3 board on a CH340/CH343 bridge from an ESP32-CAM-MB
+    (also CH340), so when more than one candidate exists every one is asked for its chip."""
+    notes: list[str] = []
+    if len(ports) == 1:
+        return ports[0].device, notes
+    s3 = []
+    for p in ports:
+        chip = probe(p.device)
+        notes.append(f"{p.device}: {chip or 'no answer'}")
+        if chip and "ESP32-S3" in chip:
+            s3.append(p.device)
+    if len(s3) == 1:
+        return s3[0], notes
+    return None, notes
+
+
+def list_ports_and_exit() -> int:
+    ports = list_ports()
+    if not ports:
+        print("No serial ports found.")
+    for p in ports:
+        vid = f"{p.vid:04X}:{p.pid:04X}" if p.vid is not None else "----:----"
+        chip = probe_chip(p.device) if p.kind not in ("unknown", "no USB id") else None
+        print(f"{p.device:<14} {vid}  {p.kind:<40} chip: {chip or '-'}")
+    return 0
+
+
 def step_ports(report: Report, args) -> str | None:
     print("\n== 1. USB serial ports")
     ports = list_ports()
@@ -137,6 +174,7 @@ def step_ports(report: Report, args) -> str | None:
         print(f"    {p.device:<14} {vid}  {p.kind}  ({p.description})")
     if args.port:
         report.add("Connection", "Upload port", INFO, f"{args.port} (given with --port)")
+        report.meta["COM port"] = args.port
         return args.port
     cands = likely_esp32_ports()
     if not cands:
@@ -145,19 +183,31 @@ def step_ports(report: Report, args) -> str | None:
                         "Windows: install the CP210x or CH343 driver if Device Manager shows an unknown device. "
                         "If no port appears at all, hold BOOT, tap RESET, release BOOT, then re-run.")
         return None
-    chosen = cands[0]
-    report.add("Connection", "ESP32-S3 USB port detected", PASS, f"{chosen.device} — {chosen.kind}")
-    report.meta["COM port"] = f"{chosen.device} ({chosen.kind})"
-    return chosen.device
+    if len(cands) > 1:
+        print("    More than one ESP-style port: asking each board which chip it is...")
+    port, notes = choose_port(cands, probe_chip)
+    for n in notes:
+        print(f"      {n}")
+    if port is None:
+        report.add("Connection", "ESP32-S3 USB port detected", FAIL, "; ".join(notes),
+                   hint="Unplug the ESP32-CAM-MB (or other boards) and re-run, or pass --port COMx. "
+                        "Run with --list-ports to see every port and its chip.")
+        return None
+    kind = next(p.kind for p in cands if p.device == port)
+    report.add("Connection", "ESP32-S3 USB port detected", PASS, f"{port} — {kind}")
+    report.meta["COM port"] = f"{port} ({kind})"
+    return port
 
 
-def step_esptool(report: Report, port: str) -> None:
+def step_esptool(report: Report, port: str) -> bool:
+    """Returns True only if the chip on `port` is an ESP32-S3 (nothing is flashed otherwise)."""
     print("\n== 2. Chip, flash and PSRAM via esptool")
     code, out = run([sys.executable, "-m", "esptool", "--port", port, "flash_id"], timeout=120)
     if code != 0:
         report.add("Board", "esptool can talk to the chip", FAIL, out.strip().splitlines()[-1] if out else "no output",
-                   hint="Close any serial monitor using the port. If it still fails, hold BOOT while plugging in.")
-        return
+                   hint="Close any serial monitor using the port (VS Code PlatformIO monitor too). "
+                        "If it still fails, hold BOOT, tap RESET, release BOOT, and re-run.")
+        return False
     report.add("Board", "esptool can talk to the chip", PASS)
     chip = re.search(r"Chip (?:is|type:)\s*(.+)", out)
     feats = re.search(r"Features:\s*(.+)", out)
@@ -168,13 +218,16 @@ def step_esptool(report: Report, port: str) -> None:
     if mac:
         report.meta["MAC"] = mac.group(1)
     is_s3 = bool(chip and "ESP32-S3" in chip.group(1))
-    report.add("Board", "Chip is ESP32-S3", PASS if is_s3 else FAIL, chip.group(1).strip() if chip else "not reported")
+    report.add("Board", "Chip is ESP32-S3", PASS if is_s3 else FAIL, chip.group(1).strip() if chip else "not reported",
+               hint="This port is a different board (an ESP32-CAM reports plain 'ESP32'). Nothing was flashed. "
+                    "Use --port with the ESP32-S3's COM port.")
     report.add("Board", "Flash size 16 MB (esptool)", PASS if size and size.group(1) == "16MB" else FAIL,
                size.group(1) if size else "not reported")
     if feats:
         psram = re.search(r"PSRAM\s*(\d+)MB", feats.group(1))
         report.add("Board", "8 MB PSRAM reported by chip", PASS if psram and psram.group(1) == "8" else FAIL,
                    feats.group(1).strip())
+    return is_s3
 
 
 def flash(report: Report, env: str, port: str) -> bool:
@@ -439,7 +492,10 @@ def main() -> int:
     ap.add_argument("--backup-flash", action="store_true", help="save the board's current 16 MB flash first")
     ap.add_argument("--no-confirm", action="store_true", help="non-interactive (visual checks = NOT TESTED)")
     ap.add_argument("--report-dir", default=str(ROOT / "reports"))
+    ap.add_argument("--list-ports", action="store_true", help="list serial ports and the chip on each, then exit")
     args = ap.parse_args()
+    if args.list_ports:
+        return list_ports_and_exit()
     args.target_sim = bool(args.sim)
 
     report = Report(target="simulator" if args.sim else "hardware")
@@ -451,8 +507,10 @@ def main() -> int:
             link.close()
         else:
             port = step_ports(report, args)
+            if port and not step_esptool(report, port):
+                print("\n  Stopping before flashing: the chip on this port is not a confirmed ESP32-S3.")
+                port = None
             if port:
-                step_esptool(report, port)
                 if args.backup_flash:
                     out = Path(args.report_dir) / f"flash_backup_{int(time.time())}.bin"
                     out.parent.mkdir(parents=True, exist_ok=True)
