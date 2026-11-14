@@ -1,0 +1,15 @@
+# PlatformIO / builds
+firmware/.pio/
+firmware/sim/build/
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+# Secrets — never commit
+.env
+*.env.local
+gateway/devices.json
+# Local reports and flash backups
+reports/*.bin

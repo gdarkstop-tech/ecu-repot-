@@ -1,0 +1,7 @@
+{
+  "name": "robot_hw",
+  "version": "0.1.0",
+  "description": "ESP32-S3 hardware adapters: OLED/I2C, button, I2S audio, Wi-Fi, NVS settings, gateway client.",
+  "frameworks": "arduino",
+  "platforms": "espressif32"
+}

@@ -1,0 +1,8 @@
+{
+  "name": "robot_logic",
+  "version": "0.1.0",
+  "description": "Portable robot logic: state machine, debug protocol, VAD, conversation controller. No hardware dependencies; unit-tested on the host.",
+  "dependencies": { "bblanchon/ArduinoJson": "7.4.3" },
+  "frameworks": "*",
+  "platforms": "*"
+}
