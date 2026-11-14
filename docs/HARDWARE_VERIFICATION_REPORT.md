@@ -1,6 +1,6 @@
 # Hardware verification report — current status
 
-**Date:** 2026-11-14 · **Firmware:** 0.2.0 · **Gateway:** 0.2.0
+**Date:** 2026-11-14 · **Firmware:** 0.3.0 · **Gateway:** 0.3.0
 
 > **The physical ESP32-S3 has not been flashed or tested yet.** This work was done in a cloud
 > development container that has no access to the laptop's USB ports (no Remote Control folder was
@@ -30,9 +30,10 @@ Legend: ✅ verified · 🟡 verified without the physical robot (build, unit te
 
 | Area | Result |
 |---|---|
-| Firmware unit tests (host) | **73/73 pass**: state machine 14, protocol/framing/UTF-8 18, robot coordinator 12, VAD + capture 7, conversation loop incl. echo guard/timeouts/mute 10, offline tutor 4, firmware↔gateway contract 8 |
-| Gateway tests | **55/55 pass**: auth, size/format limits, rate limit, one-time device-bound audio, math engine (EN/AR words, Arabic-Indic digits), tutor modes/difficulty/quiz, safety filters, LLM output cleaning + arithmetic correction, Claude request shape, eSpeak EN/AR synthesis |
-| Contract | The firmware's own C++ parser reads 8 real gateway replies (EN/AR math, alphabet, story, vocab, ignore, demo) and rejects hostile ones (foreign audio URL, path traversal, bad format/rate, unknown emotion, invalid UTF-8) |
+| Firmware unit tests (host) | **88/88 pass** (`pio test -e native`), incl. the firmware↔gateway contract (13), the HTTP body decoder for Content-Length/chunked/until-close replies (6), text-only reading mode |
+| Gateway tests | **81/81 pass**: auth, size/format limits, rate limit, device-bound audio, math engine (EN/AR words, Arabic-Indic digits), tutor modes/difficulty/quiz, safety filters, LLM output cleaning + arithmetic correction, Claude request shape, Groq/OpenAI STT adapter, text-only mode, eSpeak EN/AR, and 14 serverless tests (below) |
+| Contract | The firmware's own C++ parser reads 15 real gateway replies (EN/AR math, alphabet, story, vocab, ignore, demo, text-only, and Vercel-mode replies with conversation tokens and a sealed audio ticket) and rejects hostile ones (foreign audio URL, path traversal, bad format/rate, unknown emotion, invalid UTF-8, header-injecting or oversized context tokens) |
+| Vercel compatibility | Vercel CLI 65.16.0 `vercel build` of `gateway/` (local, no account): detects `index.py`, runtime `python3.12`, bundle ≈ 40 MB (limit 500 MB); with preset "Other" no function is built, so `vercel.json` pins `fastapi`. All dependencies have Linux x86_64 wheels for Python 3.12/3.13/3.14. Clean Python 3.12 install: 90 MB, entrypoint import 0.3 s. Two separate gateway processes sharing only `CONTEXT_SECRET`: a math lesson continued correctly while alternating between them; audio made on one was fetched from the other; tampered/foreign/expired/other-key tokens start fresh; the entrypoint writes no files (audit hook). **Not done: a live Vercel deployment and real Claude/Groq calls** (no account or keys here; vercel.com is not reachable from this session) |
 | Gateway over real HTTP | Arabic `6 × 7` → `42` with shaped subtitle + 4.9 s of speech audio; demo audio turn honest; wrong token → 401; device token absent from server log |
 | Docker image | Dockerfile written; **build not verified** (this sandbox's build containers have no DNS) |
 
@@ -52,7 +53,9 @@ Each line is produced by `tools/verify_hardware.py` unless marked *manual*.
 - [ ] Speaker tone heard (operator); mic→speaker loopback heard (operator)
 
 **Phase 3 — network + AI**
-- [ ] Wi-Fi connects (2.4 GHz); gateway text turn produces reply → spoken
+- [ ] Vercel deployment: `/healthz` shows `"ok":true`, `"stt":"groq"`, `"llm":"anthropic"`, `"devices":1`, `"context_key":"CONTEXT_SECRET"` (*manual*, docs/VERCEL_SETUP.md Part C)
+- [ ] Laptop client against Vercel: Claude answers (`"source":"llm"`), and a two-turn math exchange is remembered (*manual*, Part D)
+- [ ] Wi-Fi connects (2.4 GHz); gateway text turn produces reply → spoken or scrolled on the OLED; `status` shows `"memory":true` after the first answer
 
 **Phase 4 — standalone (manual, laptop disconnected)** — see README section 7
 - [ ] Power bank only: boot, unmute, ask a question by voice, hear the answer, robot listens again

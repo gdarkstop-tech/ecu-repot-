@@ -21,7 +21,7 @@ that works only with your gateway and can be revoked.
 |---|---|---|
 | **Anthropic Console** (console.anthropic.com) | Claude API key | Separate from a Claude.ai subscription: the API is billed per token from prepaid credits. Add a small credit and set a **monthly spend limit**. |
 | **Groq** (console.groq.com) | Speech-to-text (Whisper Large v3 Turbo, Arabic + English) | Create an API key. Alternative: OpenAI (`STT_PROVIDER=openai`, set `STT_MODEL`). |
-| **Render** (render.com) | Hosts the gateway online, 24/7 | Or Google Cloud Run / any container host with HTTPS. |
+| **Vercel** (vercel.com), Hobby plan | Hosts the gateway online, 24/7, free | [VERCEL_SETUP.md](VERCEL_SETUP.md). Alternatives: Render, Google Cloud Run, any container host with HTTPS (Dockerfile). |
 
 ## Costs (estimates — confirm on each provider's pricing page)
 
@@ -30,7 +30,7 @@ that works only with your gateway and can be revoked.
 | Claude Haiku 5.5 | $0.10 per million input tokens, $0.50 per million output tokens (prompts ≤ 100K tokens) — *official Anthropic pricing page* | ~1,200 input + up to ~400 output tokens (answer + thinking at low effort) ≈ **$0.0003** |
 | Groq Whisper Large v3 Turbo | $0.04 per hour of audio, **minimum 10 s billed per request** — *third-party sources, Oct 2026* | ≥ 10 s billed ≈ **$0.0001** |
 | Text-to-speech | not used in text-only mode | $0 |
-| Gateway hosting | Render Starter ≈ $7/month (always on). Render's free tier sleeps after 15 min idle and takes ~30–60 s to wake, which is longer than the robot waits. Cloud Run has a large free tier. — *third-party sources* | fixed monthly |
+| Gateway hosting | **Vercel Hobby: $0** (personal, non-commercial; free monthly allowance; Vercel pauses instead of charging when it runs out) — *Vercel docs*. Alternatives: Render Starter ≈ $7/month; Render's free tier sleeps and wakes too slowly for the robot — *third-party sources* | $0 on Vercel |
 
 Example: 50 questions a day ≈ 1,500 a month ≈ **$0.45 Claude + $0.17 Groq**, plus hosting.
 Each turn's real token counts are written to the gateway log (`in_tok`, `out_tok`), so you can
@@ -57,7 +57,12 @@ It prints two things — keep both somewhere safe for a few minutes:
 
 `devices.json` is listed in `.gitignore`; never commit it.
 
-## Step 2 — Put the gateway online (Render)
+## Step 2 — Put the gateway online
+
+**Recommended: Vercel, free → follow [VERCEL_SETUP.md](VERCEL_SETUP.md)** (Parts B–D), then come
+back to Step 3 here with your `https://….vercel.app` address.
+
+Alternative — Render (paid Starter instance, runs the Docker image):
 
 1. render.com → **New → Web Service** → connect GitHub → choose `gdarkstop-tech/ecu-repot-`.
 2. Branch: `claude/vigilant-gauss-lvs43y` · **Root Directory: `gateway`** · Runtime: **Docker** ·
@@ -75,7 +80,8 @@ It prints two things — keep both somewhere safe for a few minutes:
 | `DEVICE_TOKEN_HASHES` | the `robot-1:...` line from step 1 |
 | `ROBOT_NAME` | your robot's name |
 
-4. Health check path: `/healthz`. Deploy. When it is live, open
+4. Also add `CONTEXT_SECRET` (a long random text: see VERCEL_SETUP.md Part A, step 4).
+   Health check path: `/healthz`. Deploy. When it is live, open
    `https://<your-service>.onrender.com/healthz` in a browser — you should see
    `"llm":"anthropic"`, `"stt":"groq"` and `"devices":1`.
 
@@ -97,7 +103,7 @@ Flash the robot firmware if you have not yet (README section 2), then:
 ```
 
 Enter: Wi-Fi name and password (**2.4 GHz** network — the ESP32-S3 has no 5 GHz radio), gateway URL
-`https://<your-service>.onrender.com`, the `rbt_...` token, language (`auto`, `en` or `ar`), the
+`https://<your-project>.vercel.app` (or your Render address), the `rbt_...` token, language (`auto`, `en` or `ar`), the
 child's age, and answer **No** to "speaker installed". The robot restarts and joins Wi-Fi.
 
 Language: `auto` lets the speech service detect Arabic or English for each question. If one
@@ -126,7 +132,7 @@ and reconnects by itself.
 |---|---|
 | Wi-Fi-off icon stays | Wrong SSID/password or a 5 GHz-only network; re-run `provision` |
 | `ERR auth_rejected` (stays) | Token and `DEVICE_TOKEN_HASHES` do not match — redo step 1 and update both |
-| `ERR gateway_unavailable` / `gateway_timeout` | Gateway asleep, restarting or misconfigured — open `/healthz`; check Render logs |
+| `ERR gateway_unavailable` / `gateway_timeout` | Gateway misconfigured or a provider is down — open `/healthz`; check the Vercel (or Render) logs |
 | `ERR net_or_tls_error` | Wrong URL (must start with `https://`) or unusual certificate authority |
 | Robot ignores you | Speak closer; check `mic_test`; quiet audio is ignored on purpose |
 | Answer is about the wrong words | Set the language explicitly (`set lang ar` / `set lang en` in the console) |

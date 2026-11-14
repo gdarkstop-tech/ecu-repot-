@@ -11,15 +11,15 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
+from typing import Protocol
 
 from .config import Settings
-from .providers.base import ChatMessage, LanguageModel, ProviderError, SpeechToText, TextToSpeech
+from .providers.base import ChatMessage, LanguageModel, ProviderError, SpeechToText
 from .providers.mock import DEMO_PREFIX
 from .audio import voiced_seconds
 from .safety import check_input, check_output, redact_personal
-from .state import AudioStore, SessionStore
 from .textutil import detect_language, first_sentence, is_probable_hallucination, strip_for_speech, to_oled
-from .tutor.engine import Tutor, TutorReply, level_for_age
+from .tutor.engine import Session, Tutor, TutorReply, level_for_age
 from .tutor.mathcheck import correct_claims
 
 log = logging.getLogger("gateway.turn")
@@ -69,16 +69,20 @@ class TurnResult:
     log_fields: dict = field(default_factory=dict)
 
 
+class SpeechDelivery(Protocol):
+    def deliver(self, device_id: str, text: str, lang: str) -> dict | None: ...
+
+
 class TurnPipeline:
-    def __init__(self, settings: Settings, stt: SpeechToText, llm: LanguageModel, tts: TextToSpeech,
-                 sessions: SessionStore, audio: AudioStore) -> None:
+    """Stateless: the caller supplies the conversation Session (see memory.py) and stores it after."""
+
+    def __init__(self, settings: Settings, stt: SpeechToText, llm: LanguageModel, speech: SpeechDelivery) -> None:
         self.s = settings
-        self.stt, self.llm, self.tts = stt, llm, tts
-        self.sessions, self.audio = sessions, audio
+        self.stt, self.llm, self.speech = stt, llm, speech
         self.tutor = Tutor(settings.robot_name)
 
     # ------------------------------------------------------------------ entry points
-    def run_audio(self, device_id: str, pcm: bytes, rate: int, lang_pref: str, age: int,
+    def run_audio(self, session: Session, pcm: bytes, rate: int, lang_pref: str, age: int,
                   debug_transcript: str | None = None, output: str = "audio") -> TurnResult:
         t0 = time.monotonic()
         hint = lang_pref if lang_pref in ("en", "ar") else None
@@ -98,16 +102,16 @@ class TurnPipeline:
                                   {"outcome": "ignored", "reason": "stt_hallucination"})
         stt_ms = int((time.monotonic() - t0) * 1000)
         audio_s = round(len(pcm) / 2 / rate, 2)
-        return self._respond(device_id, tr_text.strip(), tr_lang, lang_pref, age, t0, stt_ms, output, audio_s)
+        return self._respond(session, tr_text.strip(), tr_lang, lang_pref, age, t0, stt_ms, output, audio_s)
 
-    def run_text(self, device_id: str, text: str, lang_pref: str, age: int, output: str = "audio") -> TurnResult:
-        return self._respond(device_id, text.strip(), None, lang_pref, age, time.monotonic(), 0, output)
+    def run_text(self, session: Session, text: str, lang_pref: str, age: int, output: str = "audio") -> TurnResult:
+        return self._respond(session, text.strip(), None, lang_pref, age, time.monotonic(), 0, output)
 
     # ------------------------------------------------------------------ core
-    def _respond(self, device_id: str, text: str, stt_lang: str | None, lang_pref: str, age: int,
+    def _respond(self, session: Session, text: str, stt_lang: str | None, lang_pref: str, age: int,
                  t0: float, stt_ms: int, output: str = "audio", audio_s: float = 0.0) -> TurnResult:
         screen_only = output == "text"
-        if len(text) < 2:
+        if len(text) < 2 and not text.isdigit():  # "7" is a valid answer to "what is 3 plus 4?"
             return TurnResult({"ignore": True, "transcript": text, "timing": {"stt_ms": stt_ms}},
                               {"outcome": "ignored"})
 
@@ -122,7 +126,6 @@ class TurnPipeline:
         age = max(3, min(12, age))
 
         t1 = time.monotonic()
-        session = self.sessions.get(device_id)
         warnings: list[str] = []
         usage: dict = {}
         reply = self._think(session, text, lang, age, warnings, screen_only, usage)
@@ -150,16 +153,7 @@ class TurnPipeline:
         try:
             if screen_only:
                 raise _NoSpeech()
-            speech = self.tts.synthesize(reply.text, reply.lang)
-            if speech.pcm:
-                turn_audio = self.audio.put(device_id, speech.pcm, speech.sample_rate)
-                audio_info = {
-                    "path": f"/v1/turns/{turn_audio}/audio",
-                    "format": "pcm_s16le",
-                    "sample_rate": speech.sample_rate,
-                    "bytes": len(speech.pcm),
-                    "duration_ms": int(len(speech.pcm) / 2 / speech.sample_rate * 1000),
-                }
+            audio_info = self.speech.deliver(session.device_id, reply.text, reply.lang)
         except _NoSpeech:
             pass
         except ProviderError as exc:

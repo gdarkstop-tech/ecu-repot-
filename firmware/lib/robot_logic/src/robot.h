@@ -37,6 +37,7 @@ struct DeviceInfo {
   const char* ip = "";
   bool gatewayConfigured = false;
   bool gatewayOk = false;
+  bool gatewayMemory = false;  // holding a conversation token from the gateway
   bool tokenSet = false;
   const char* lang = "auto";
   uint8_t childAge = 0;

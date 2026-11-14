@@ -8,10 +8,11 @@
 
 #include "ca_roots.h"
 #include "gateway_reply.h"
+#include "http_body.h"
 #include "utf8.h"
 
 #ifndef ROBOT_FW_VERSION
-#define ROBOT_FW_VERSION "0.2.0"
+#define ROBOT_FW_VERSION "0.3.0"
 #endif
 
 namespace robot {
@@ -106,6 +107,72 @@ int WifiManager::scanResult(char* out, size_t cap) {
 // ================================================================== gateway
 namespace {
 volatile bool g_busy = false;
+const char* kResponseHeaders[] = {"Transfer-Encoding"};
+constexpr uint32_t kStallMs = 10000;  // no byte for this long: give up on the body
+
+struct BufferSink {
+  char* buf;
+  size_t cap;
+  size_t len;
+  bool overflow;
+};
+
+size_t toBuffer(const uint8_t* p, size_t n, void* ctx) {
+  BufferSink* s = static_cast<BufferSink*>(ctx);
+  if (s->len + n > s->cap) {
+    s->overflow = true;  // larger than any valid reply: refuse instead of allocating
+    return 0;
+  }
+  memcpy(s->buf + s->len, p, n);
+  s->len += n;
+  return n;
+}
+
+struct SpeakerSink {
+  SpeakerOutput* spk;
+  volatile bool* cancel;
+};
+
+size_t toSpeaker(const uint8_t* p, size_t n, void* ctx) {
+  SpeakerSink* s = static_cast<SpeakerSink*>(ctx);
+  size_t off = 0;
+  while (off < n) {
+    if (*s->cancel || s->spk->stopRequested()) return off;  // short write ends the stream
+    off += s->spk->write(p + off, n - off, 1000);           // blocks while the buffer is full
+  }
+  return n;
+}
+
+// Reads the response body through HttpBodyDecoder with a stall timeout and cancel checks.
+// (HTTPClient's own reader has no stall timeout and no size cap.)
+bool readBody(HTTPClient& http, HttpBodyDecoder::Sink sink, void* ctx, volatile bool& cancel) {
+  HttpBodyDecoder dec;
+  String te = http.header("Transfer-Encoding");
+  te.toLowerCase();
+  int size = http.getSize();
+  if (te.indexOf("chunked") >= 0) dec.beginChunked();
+  else if (size >= 0) dec.beginLength((uint32_t)size);
+  else dec.beginUntilClose();
+  WiFiClient* s = http.getStreamPtr();
+  if (!s) return false;
+  static uint8_t buf[1024];  // only the gateway task reads bodies
+  uint32_t last = millis();
+  while (!dec.complete()) {
+    if (cancel) return false;
+    int avail = s->available();
+    if (avail <= 0) {
+      if (!s->connected()) return dec.finishOnClose();
+      if (millis() - last > kStallMs) return false;
+      vTaskDelay(pdMS_TO_TICKS(2));
+      continue;
+    }
+    int n = s->read(buf, avail < (int)sizeof(buf) ? (size_t)avail : sizeof(buf));
+    if (n <= 0) continue;
+    last = millis();
+    if (!dec.feed(buf, (size_t)n, sink, ctx)) return false;
+  }
+  return true;
+}
 }  // namespace
 
 void GatewayClient::begin(Settings* s, WifiManager* wifi, SpeakerOutput* spk, LogFn log, void* ctx) {
@@ -115,6 +182,8 @@ void GatewayClient::begin(Settings* s, WifiManager* wifi, SpeakerOutput* spk, Lo
   log_ = log;
   ctx_ = ctx;
   mtx_ = xSemaphoreCreateMutex();
+  replyBuf_ = static_cast<char*>(ps_malloc(kMaxReplyBytes + 1));
+  if (!replyBuf_) replyBuf_ = static_cast<char*>(malloc(kMaxReplyBytes + 1));
   // TLS handshakes need a deep stack; this task runs on core 0 away from the UI.
   xTaskCreatePinnedToCore(taskFn, "gateway", 12288, this, 4, &task_, 0);
 }
@@ -197,13 +266,17 @@ void GatewayClient::run() {
   }
 }
 
-bool GatewayClient::parseReply(const char* body, size_t len, char* audioPath, size_t pathCap, uint32_t& audioRate) {
+bool GatewayClient::parseReply(const char* body, size_t len, uint32_t& audioRate) {
   GatewayReply r;
-  if (!parseGatewayReply(body, len, r, audioPath, pathCap, audioRate)) return false;
+  ContextUpdate upd = ContextUpdate::Keep;
+  if (!parseGatewayReply(body, len, r, audioPath_, sizeof(audioPath_), audioRate, context_, sizeof(context_), &upd))
+    return false;
+  if (upd == ContextUpdate::Clear) context_[0] = 0;
+  contextLen_ = (uint16_t)strlen(context_);
   if (!spk_->installed()) {
     // Never try to stream or play audio without a speaker.
     r.hasAudio = false;
-    audioPath[0] = 0;
+    audioPath_[0] = 0;
   }
   xSemaphoreTake(mtx_, portMAX_DELAY);
   reply_ = r;
@@ -213,6 +286,10 @@ bool GatewayClient::parseReply(const char* body, size_t len, char* audioPath, si
 
 void GatewayClient::execute() {
   uint32_t t0 = millis();
+  if (!replyBuf_) {
+    fail("no_memory", true);
+    return;
+  }
   bool secure = strncmp(s_->gatewayUrl, "https://", 8) == 0;
   WiFiClientSecure tls;
   WiFiClient plain;
@@ -231,8 +308,11 @@ void GatewayClient::execute() {
     fail("bad_gateway_url", false);
     return;
   }
+  http.collectHeaders(kResponseHeaders, 1);
   String auth = String("Bearer ") + s_->deviceToken;
   http.addHeader("Authorization", auth);
+  // The conversation so far, sealed by the gateway (lets a serverless gateway remember it).
+  if (context_[0]) http.addHeader("X-Robot-Context", context_);
   http.addHeader("X-Robot-Lang", job_ == Job::Text ? lang_ : s_->lang);
   http.addHeader("X-Robot-Age", String(s_->childAge));
   http.addHeader("X-Robot-Fw", ROBOT_FW_VERSION);
@@ -279,37 +359,46 @@ void GatewayClient::execute() {
     }
     return;
   }
-  int len = http.getSize();
-  if (len > 8192) {
+  if (http.getSize() > (int)kMaxReplyBytes) {
     http.end();
     fail("reply_too_large", true);
     return;
   }
-  String body = http.getString();
+  BufferSink sink{replyBuf_, kMaxReplyBytes, 0, false};
+  bool bodyOk = readBody(http, toBuffer, &sink, cancel_);
   http.end();
-  char audioPath[96];
+  if (cancel_) {
+    fail("cancelled", true);
+    return;
+  }
+  if (!bodyOk) {
+    fail(sink.overflow ? "reply_too_large" : "reply_incomplete", true);
+    return;
+  }
+  replyBuf_[sink.len] = 0;
   uint32_t audioRate = 0;
-  if (!parseReply(body.c_str(), body.length(), audioPath, sizeof(audioPath), audioRate)) {
+  if (!parseReply(replyBuf_, sink.len, audioRate)) {
     fail("bad_reply", true);
     return;
   }
   lastLatencyMs_ = millis() - t0;
   lastOk_ = true;
   // Mark the speaker busy BEFORE publishing the reply so the conversation never sees a gap.
-  if (audioPath[0]) spk_->beginStream(audioRate);
+  if (audioPath_[0]) spk_->beginStream(audioRate);
   status_ = Status::Reply;
-  log("info", "gateway: reply in %lu ms", (unsigned long)lastLatencyMs_);
-  if (!audioPath[0]) return;
+  log("info", "gateway: reply in %lu ms (memory %s)", (unsigned long)lastLatencyMs_, context_[0] ? "on" : "off");
+  if (!audioPath_[0]) return;
 
   // ---- stream the reply audio (same origin, reusing the TLS connection when possible)
   HTTPClient ah;
   ah.setReuse(false);
   ah.setConnectTimeout(8000);
   ah.setTimeout(15000);
-  if (!ah.begin(*client, String(s_->gatewayUrl) + audioPath)) {
+  if (!ah.begin(*client, String(s_->gatewayUrl) + audioPath_)) {
     spk_->endStream();
     return;
   }
+  ah.collectHeaders(kResponseHeaders, 1);
   ah.addHeader("Authorization", auth);
   int ac = ah.GET();
   if (ac != 200) {
@@ -318,29 +407,8 @@ void GatewayClient::execute() {
     spk_->endStream();
     return;
   }
-  int remaining = ah.getSize();  // gateway always sends Content-Length
-  WiFiClient* stream = ah.getStreamPtr();
-  static uint8_t buf[2048];
-  uint32_t lastData = millis();
-  while (!cancel_ && !spk_->stopRequested() && (remaining > 0 || remaining == -1)) {
-    size_t avail = stream->available();
-    if (avail == 0) {
-      if (!ah.connected() || millis() - lastData > 10000) break;
-      vTaskDelay(pdMS_TO_TICKS(2));
-      continue;
-    }
-    size_t want = avail < sizeof(buf) ? avail : sizeof(buf);
-    if (remaining > 0 && want > (size_t)remaining) want = (size_t)remaining;
-    int n = stream->readBytes(buf, want);
-    if (n <= 0) continue;
-    lastData = millis();
-    size_t off = 0;
-    while (off < (size_t)n && !cancel_ && !spk_->stopRequested()) {
-      size_t w = spk_->write(buf + off, (size_t)n - off, 1000);  // blocks while the buffer is full
-      off += w;
-    }
-    if (remaining > 0) remaining -= n;
-  }
+  SpeakerSink speaker{spk_, &cancel_};
+  if (!readBody(ah, toSpeaker, &speaker, cancel_)) log("warn", "gateway: audio stream ended early");
   ah.end();
   spk_->endStream();
 }

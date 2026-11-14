@@ -16,6 +16,7 @@ VOICES = {"en": "en-us", "ar": "ar"}
 
 class EspeakTTS:
     name = "espeak"
+    rate = 22050  # eSpeak NG's output rate
 
     def __init__(self) -> None:
         self.binary = shutil.which("espeak-ng")

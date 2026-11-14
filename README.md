@@ -12,6 +12,9 @@ development**: in normal use the robot runs on a power bank and talks to the gat
 [docs/CLAUDE_SETUP.md](docs/CLAUDE_SETUP.md)** — accounts, costs, putting the gateway online,
 provisioning, first conversation.
 
+**Host the gateway for free on Vercel: [docs/VERCEL_SETUP.md](docs/VERCEL_SETUP.md)** — exact
+import settings, environment variables, `/healthz` check (beginner steps).
+
 Code: https://github.com/gdarkstop-tech/ecu-repot- · branch `claude/vigilant-gauss-lvs43y`
 
 ![OLED gallery rendered by the firmware's own drawing code](docs/media/oled_gallery.png)
@@ -24,7 +27,8 @@ Code: https://github.com/gdarkstop-tech/ecu-repot- · branch `claude/vigilant-ga
 | | |
 |---|---|
 | ✅ Builds | `diag` and `robot` firmware compile for ESP32-S3 N16R8 |
-| 🟡 Tested without the physical robot | 73 firmware unit tests, 55 gateway tests, simulator protocol checks, gateway over real HTTP |
+| 🟡 Tested without the physical robot | 88 firmware unit tests, 81 gateway tests, simulator protocol checks, gateway over real HTTP, Vercel build (local CLI) |
+| ⬜ Not yet live | A real Vercel deployment and real Claude/Groq calls (keys exist only on your side) |
 | ⬜ Not yet on hardware | Flashing, OLED, audio, Wi-Fi, standalone conversation |
 
 Details and the full checklist: [docs/HARDWARE_VERIFICATION_REPORT.md](docs/HARDWARE_VERIFICATION_REPORT.md).
@@ -42,7 +46,7 @@ firmware/        PlatformIO project (ESP32-S3)
   lib/robot_hw     ESP32 adapters: OLED, button, I2S audio, Wi-Fi, settings, HTTPS client
   test/            host unit tests (pio test -e native)
   sim/             host simulator + image/GIF renderer
-gateway/         cloud AI gateway (Python / FastAPI) + Dockerfile
+gateway/         cloud AI gateway (Python / FastAPI): index.py + vercel.json (Vercel), Dockerfile
 tools/           laptop tools: verify_hardware, robot_console, gateway_client, generators
 docs/            ARCHITECTURE, WIRING, PROTOCOL, HARDWARE_VERIFICATION_REPORT, media
 ```
@@ -125,10 +129,12 @@ cd gateway
 ..\.venv\Scripts\python.exe -m uvicorn --factory robot_gateway.app:app_factory --host 0.0.0.0 --port 8080
 ```
 
-**Deploy** (so the laptop can be off): build the container in `gateway/` on any host with HTTPS —
-Google Cloud Run, Fly.io, Render, Railway, or a VPS behind Caddy. Set the variables from
-[gateway/.env.example](gateway/.env.example) as environment variables/secrets on the host, run a
-**single instance** (state is in memory), and keep `devices.json` or `DEVICE_TOKEN_HASHES` there.
+**Deploy** (so the laptop can be off): **Vercel Hobby, free — [docs/VERCEL_SETUP.md](docs/VERCEL_SETUP.md)**
+(Root Directory `gateway`, preset FastAPI, keys as Vercel environment variables). The gateway is
+stateless there: conversation memory travels with the robot as a sealed token (`ctx`). Or build
+the container in `gateway/` on any HTTPS host (Cloud Run, Fly.io, Render, a VPS behind Caddy) with
+the variables from [gateway/.env.example](gateway/.env.example); one instance there also keeps
+memory for robots with older firmware.
 
 **Providers** are configuration only (no reflashing):
 
@@ -190,7 +196,7 @@ cd firmware && pio run -e diag -e robot
 ```
 
 ```bash
-cd gateway && python -m pytest -q
+cd gateway && pip install -r requirements-dev.txt && python -m pytest -q
 ```
 
 ```bash

@@ -5,6 +5,10 @@
 // The reply is untrusted input: every field is bounds-checked, UTF-8-validated and
 // allow-listed. The audio path must be a relative /v1/ path on the same gateway, so the
 // device token can never be sent to another host.
+//
+// Conversation context ("ctx"): an opaque token sealed by the gateway (the robot cannot read
+// it). The robot keeps it in RAM and sends it back in the X-Robot-Context header, which lets
+// a serverless gateway (Vercel) remember the conversation without any server memory.
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
@@ -13,8 +17,22 @@
 
 namespace robot {
 
+constexpr size_t kMaxReplyBytes = 12288;    // whole JSON reply
+constexpr size_t kMaxAudioPathLen = 1023;   // serverless gateways put a sealed ticket in the path
+constexpr size_t kMaxContextLen = 3000;     // the gateway keeps its tokens <= 2400 characters
+
+// What to do with the robot's stored context after a reply.
+enum class ContextUpdate : uint8_t {
+  Keep,   // reply has no "ctx" (ignored turn, or an older gateway): keep the current token
+  Set,    // a valid token was copied to ctxOut
+  Clear,  // "ctx" present but empty, too long or malformed: forget the current token
+};
+
+// ctxOut/ctxUpdate are optional. Nothing is written to ctxOut unless the whole reply is valid.
 bool parseGatewayReply(const char* body, size_t len, GatewayReply& out, char* audioPath, size_t pathCap,
-                       uint32_t& audioRate);
+                       uint32_t& audioRate, char* ctxOut = nullptr, size_t ctxCap = 0,
+                       ContextUpdate* ctxUpdate = nullptr);
 bool isSafeAudioPath(const char* path);
+bool isSafeContextToken(const char* token, size_t cap);
 
 }  // namespace robot

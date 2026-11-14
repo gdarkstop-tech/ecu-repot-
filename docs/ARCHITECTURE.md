@@ -81,8 +81,25 @@ keeps answers correct and the robot useful even with no model configured (demo m
 **ADR-9 — One firmware, both USB ports.** The debug link reads/writes the native USB and the
 USB-UART bridge simultaneously, so it works whichever connector is used. The link is optional.
 
-**ADR-10 — Single-process gateway state.** Sessions, rate limits and reply audio are in memory;
-run one worker. To scale out, move them to Redis and route each robot to one instance.
+**ADR-10 — Single-process gateway state (long-running hosts).** On Docker/a VPS, sessions, rate
+limits and one-time reply audio are in memory; run one worker. Kept for robots with older firmware.
+
+**ADR-11 — Stateless gateway: the robot carries its sealed conversation (serverless hosts).** Vercel
+(free Hobby plan) runs each request on any instance and keeps no memory or files, and a shared
+database would add a service to set up and run. Instead, the gateway seals the conversation state
+(tutor mode, pending question, level, quiz score, last 4 exchanges) into a token with AES-256-GCM
+(key from `CONTEXT_SECRET`, associated data = purpose + device id, issued-at for a 30-minute expiry,
+zlib-compressed, ≤ 2400 characters, oldest exchanges dropped first) and returns it as `ctx`; the
+robot stores it in RAM and returns it as `X-Robot-Context`. Integrity matters most: a forged
+history would be a prompt-injection path into the model, so any token that fails authentication,
+expiry or schema validation silently starts a fresh session. Encryption keeps the child's words
+private even if the token is logged somewhere. Reply audio uses the same sealing for a ticket in the
+URL (speech synthesised on the GET). Trade-offs: tokens cannot be revoked individually (rotate
+`CONTEXT_SECRET` to invalidate all); audio tickets are replayable by the same device for 120 s;
+rate limits become per-instance (best effort — provider spend limits are the hard cap); a robot
+reboot starts a new conversation. Considered and rejected for now: Vercel-Marketplace Redis/KV (an
+extra account and setup for a beginner, free tiers vary) and returning audio inline in the JSON
+(the robot's 12 KB reply buffer).
 
 ## Security and privacy
 
@@ -92,10 +109,15 @@ run one worker. To scale out, move them to Redis and route each robot to one ins
 - **Revocation:** `python -m robot_gateway.devices disable robot-1`; the gateway stores only
   SHA-256 hashes of tokens.
 - **Children's data:** microphone audio is never stored by the gateway; transcripts are not logged
-  unless `LOG_TRANSCRIPTS=true`; conversation memory is in RAM and expires after 30 minutes idle;
-  reply audio is deleted after one fetch or 120 s. Phone numbers/emails/addresses are caught before
+  unless `LOG_TRANSCRIPTS=true`; conversation memory is an encrypted token held in the robot's RAM
+  (and, on long-running hosts, in the gateway's RAM) and expires after 30 minutes idle; reply audio
+  is deleted after one fetch or 120 s (serverless: never stored, ticket expires after 120 s). Phone numbers/emails/addresses are caught before
   any model call. Choose AI providers whose data terms fit children's data in your jurisdiction.
-- **Limits:** 15 s max utterance, 20 turns/min and 1,500/day per robot (configurable).
+- **Limits:** 15 s max utterance, 20 turns/min and 1,500/day per robot (configurable; per instance
+  on serverless hosts). Set a monthly spend limit in the Anthropic Console as the hard cost cap.
+- **Robot-side parsing:** reply bodies are read with a 12 KB cap and a 10 s stall timeout whatever
+  the HTTP framing (Content-Length or chunked); the context token is accepted only as base64url
+  (no header injection) and never partially written.
 - **Known gaps (production hardening):** anyone with physical USB access can reprovision or
   reflash the robot — enable ESP32-S3 secure boot + flash encryption and disable the debug console
   for production units. The keyword safety lists are a baseline; add a provider moderation API and
@@ -104,4 +126,5 @@ run one worker. To scale out, move them to Redis and route each robot to one ins
 ## What is not built yet
 
 Camera/object recognition (ESP32-CAM), distance sensor, motors/servo, microSD content, wake word,
-barge-in, streaming STT/TTS, multi-instance gateway, OTA firmware updates, parent dashboard.
+barge-in, streaming STT/TTS, exact cross-instance rate limiting, OTA firmware updates, parent
+dashboard.

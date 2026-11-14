@@ -29,6 +29,6 @@ jobs:
         with:
           python-version: "3.12"
       - run: sudo apt-get update && sudo apt-get install -y espeak-ng
-      - run: pip install -r gateway/requirements.txt
+      - run: pip install -r gateway/requirements-dev.txt
       - name: Gateway tests
         run: cd gateway && python -m pytest -q

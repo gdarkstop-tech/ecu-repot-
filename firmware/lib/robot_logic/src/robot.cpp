@@ -276,6 +276,7 @@ void Robot::emitStatus(uint32_t now) {
   JsonObject gw = doc["gateway"].to<JsonObject>();
   gw["configured"] = info.gatewayConfigured;
   gw["ok"] = info.gatewayOk;
+  gw["memory"] = info.gatewayMemory;
   gw["token_set"] = info.tokenSet;  // the token itself is never reported
   doc["lang"] = info.lang;
   doc["child_age"] = info.childAge;

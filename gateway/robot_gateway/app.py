@@ -2,17 +2,21 @@
 
   POST /v1/turns              body: audio/L16;rate=16000;channels=1   (the child's utterance)
   POST /v1/turns/text         body: {"text": "...", "lang": "en|ar|auto"}   (testing)
-  GET  /v1/turns/{id}/audio   reply speech, PCM s16le mono, one-time, same device only
-  GET  /healthz               liveness + which providers are configured (no secrets)
+  GET  /v1/turns/{id}/audio   reply speech, PCM s16le mono, same device only, expires
+  GET  /healthz               liveness + configuration status (never secrets)
 
 Every /v1 call needs "Authorization: Bearer <device token>". Run behind HTTPS (the hosting
 platform's TLS termination); the robot refuses plain HTTP except to private LAN addresses.
+
+Conversation memory: replies carry "ctx" (a sealed token); the robot sends it back in the
+X-Robot-Context header. That makes the gateway work on serverless hosts such as Vercel, where
+consecutive requests may reach different instances (memory.py, docs/ARCHITECTURE.md ADR-11).
 """
 from __future__ import annotations
 
 import json
 import logging
-import re
+import os
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
@@ -21,9 +25,12 @@ from starlette.concurrency import run_in_threadpool
 from . import __version__
 from .config import Settings, load_dotenv
 from .devices import Device, DeviceRegistry
+from .memory import ContextCodec, ConversationMemory
 from .pipeline import TurnPipeline
 from .providers.base import LanguageModel, ProviderError, SpeechToText, TextToSpeech
 from .providers.factory import build_llm, build_stt, build_tts
+from .sealing import Sealer, resolve_context_secret
+from .speech import StoredSpeech, TicketSpeech, valid_turn_id
 from .state import AudioStore, RateLimiter, SessionStore
 
 log = logging.getLogger("gateway")
@@ -56,23 +63,76 @@ async def _read_limited(request: Request, limit: int) -> bytes:
     return bytes(body)
 
 
+class _Unavailable:
+    """Stands in for a provider that could not be configured, so the gateway still starts and
+    /healthz can say what is wrong (on Vercel a crash at import would only show a generic error)."""
+
+    rate = 16000
+
+    def __init__(self, kind: str, code: str) -> None:
+        self.name, self.code = f"{kind}_unavailable", code
+
+    def _fail(self, *_args, **_kwargs):
+        raise ProviderError(self.code, retryable=False)
+
+    transcribe = reply = synthesize = _fail
+
+
+def _build(kind: str, factory, settings: Settings, errors: list[str]):
+    try:
+        return factory(settings)
+    except ProviderError as exc:
+        errors.append(f"{kind}: {exc.code}")
+        log.error("%s provider not configured: %s", kind, exc.code)
+        return _Unavailable(kind, exc.code)
+
+
+def _config_warnings(settings: Settings, devices: int) -> list[str]:
+    warnings = []
+    if devices == 0:
+        warnings.append("no robots registered: set DEVICE_TOKEN_HASHES")
+    if settings.llm_provider == "anthropic" and not os.environ.get("ANTHROPIC_API_KEY"):
+        warnings.append("ANTHROPIC_API_KEY is not set")
+    if settings.llm_provider == "mock":
+        warnings.append("LLM_PROVIDER is mock: demo answers only")
+    if settings.stt_provider == "mock":
+        warnings.append("STT_PROVIDER is mock: spoken words are not understood")
+    return warnings
+
+
 def create_app(settings: Settings | None = None, *, stt: SpeechToText | None = None,
                llm: LanguageModel | None = None, tts: TextToSpeech | None = None,
-               registry: DeviceRegistry | None = None) -> FastAPI:
+               registry: DeviceRegistry | None = None, stateless: bool | None = None,
+               context_secret: bytes | None = None) -> FastAPI:
     if settings is None:
         load_dotenv()
         settings = Settings.from_env()
-    stt = stt or build_stt(settings)
-    llm = llm or build_llm(settings)
-    tts = tts or build_tts(settings)
+    stateless = settings.stateless if stateless is None else stateless
+    errors: list[str] = []
+    stt = stt or _build("stt", build_stt, settings, errors)
+    llm = llm or _build("llm", build_llm, settings, errors)
+    tts = tts or _build("tts", build_tts, settings, errors)
     registry = registry or DeviceRegistry(settings.devices_file, settings.device_token_hashes)
     if len(registry) == 0:
         log.warning("no devices registered: every request will be rejected (see robot_gateway.devices)")
 
+    if context_secret is None:
+        context_secret, key_source, key_warning = resolve_context_secret()
+    else:
+        key_source, key_warning = "provided", None
+    warnings = _config_warnings(settings, len(registry)) + ([key_warning] if key_warning else [])
+    for w in warnings:
+        log.warning("config: %s", w)
+
+    # Rate limits are per instance: exact on one long-running server, best effort on serverless
+    # hosts (each instance counts separately). Provider-side spend limits are the hard cap.
     limiter = RateLimiter(settings.turns_per_minute, settings.turns_per_day)
-    sessions = SessionStore(settings.session_ttl_seconds)
-    audio = AudioStore(settings.audio_ttl_seconds)
-    pipeline = TurnPipeline(settings, stt, llm, tts, sessions, audio)
+    codec = ContextCodec(Sealer(context_secret, "ctx"), settings.session_ttl_seconds,
+                         settings.context_max_chars, settings.context_history_turns)
+    memory = ConversationMemory(codec, None if stateless else SessionStore(settings.session_ttl_seconds))
+    speech = (TicketSpeech(tts, Sealer(context_secret, "audio"), settings.audio_ttl_seconds) if stateless
+              else StoredSpeech(tts, AudioStore(settings.audio_ttl_seconds)))
+    pipeline = TurnPipeline(settings, stt, llm, speech)
 
     app = FastAPI(title="Robot AI Gateway", version=__version__, docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -99,8 +159,11 @@ def create_app(settings: Settings | None = None, *, stt: SpeechToText | None = N
         except ProviderError as exc:
             raise HTTPException(502 if exc.retryable else 500, {"error": exc.code}) from exc
 
-    def finish(dev: Device, result) -> JSONResponse:
-        log.info("turn device=%s %s", dev.id, json.dumps(result.log_fields, ensure_ascii=False))
+    def finish(dev: Device, session, mem: str, result) -> JSONResponse:
+        if not result.body.get("ignore"):
+            # Nothing changed on an ignored turn: no "ctx", so the robot keeps the one it has.
+            result.body["ctx"] = memory.token_for(session)
+        log.info("turn device=%s mem=%s %s", dev.id, mem, json.dumps(result.log_fields, ensure_ascii=False))
         return JSONResponse(result.body)
 
     @app.get("/")
@@ -108,15 +171,18 @@ def create_app(settings: Settings | None = None, *, stt: SpeechToText | None = N
         return {"service": "robot-ai-gateway", "version": __version__}
 
     @app.get("/healthz")
-    def health() -> dict:
-        return {"ok": True, "version": __version__, "stt": stt.name, "llm": llm.name, "tts": tts.name,
-                "devices": len(registry)}
+    def health() -> JSONResponse:
+        body = {"ok": not errors, "version": __version__, "stt": stt.name, "llm": llm.name, "tts": tts.name,
+                "devices": len(registry), "stateless": stateless, "memory": memory.mode,
+                "context_key": key_source, "warnings": warnings, "errors": errors}
+        return JSONResponse(body, status_code=200 if not errors else 503)
 
     @app.post("/v1/turns")
     async def turn_audio(request: Request, dev: Device = Depends(device_auth),
                          x_robot_lang: str | None = Header(default=None),
                          x_robot_age: str | None = Header(default=None),
                          x_robot_output: str | None = Header(default=None),
+                         x_robot_context: str | None = Header(default=None),
                          x_debug_transcript: str | None = Header(default=None)) -> JSONResponse:
         rate = _parse_l16(request.headers.get("content-type"))
         if not limiter.allow(dev.id):
@@ -128,14 +194,16 @@ def create_app(settings: Settings | None = None, *, stt: SpeechToText | None = N
         lang, age = robot_prefs(x_robot_lang, x_robot_age)
         debug = x_debug_transcript if settings.allow_debug_transcript else None
         output = "text" if (x_robot_output or "").lower() == "text" else "audio"
-        result = await run_in_threadpool(run_or_502, pipeline.run_audio, dev.id, pcm, rate, lang, age, debug, output)
-        return finish(dev, result)
+        session, mem = memory.load(dev.id, x_robot_context)
+        result = await run_in_threadpool(run_or_502, pipeline.run_audio, session, pcm, rate, lang, age, debug, output)
+        return finish(dev, session, mem, result)
 
     @app.post("/v1/turns/text")
     async def turn_text(request: Request, dev: Device = Depends(device_auth),
                         x_robot_lang: str | None = Header(default=None),
                         x_robot_age: str | None = Header(default=None),
-                        x_robot_output: str | None = Header(default=None)) -> JSONResponse:
+                        x_robot_output: str | None = Header(default=None),
+                        x_robot_context: str | None = Header(default=None)) -> JSONResponse:
         if not limiter.allow(dev.id):
             raise HTTPException(429, {"error": "rate_limited"})
         raw = await _read_limited(request, 8192)
@@ -149,18 +217,19 @@ def create_app(settings: Settings | None = None, *, stt: SpeechToText | None = N
             raise HTTPException(400, {"error": "bad_text_length"})
         lang, age = robot_prefs(data.get("lang") or x_robot_lang, x_robot_age)
         output = "text" if (x_robot_output or data.get("output") or "").lower() == "text" else "audio"
-        result = await run_in_threadpool(run_or_502, pipeline.run_text, dev.id, text, lang, age, output)
-        return finish(dev, result)
+        session, mem = memory.load(dev.id, x_robot_context)
+        result = await run_in_threadpool(run_or_502, pipeline.run_text, session, text, lang, age, output)
+        return finish(dev, session, mem, result)
 
     @app.get("/v1/turns/{turn_id}/audio")
     def turn_audio_fetch(turn_id: str, dev: Device = Depends(device_auth)) -> Response:
-        if not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", turn_id):
+        if not valid_turn_id(turn_id):
             raise HTTPException(404, {"error": "not_found"})
-        item = audio.take(turn_id, dev.id)
+        item = run_or_502(speech.fetch, turn_id, dev.id)
         if item is None:
             raise HTTPException(404, {"error": "not_found"})
-        return Response(item.pcm, media_type=f"audio/L16;rate={item.rate};channels=1",
-                        headers={"Cache-Control": "no-store"})
+        pcm, rate = item
+        return Response(pcm, media_type=f"audio/L16;rate={rate};channels=1", headers={"Cache-Control": "no-store"})
 
     return app
 

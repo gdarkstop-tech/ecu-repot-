@@ -35,6 +35,16 @@ def _int(name: str, default: int) -> int:
     return default if not v else int(v)
 
 
+def _stateless() -> bool:
+    """GATEWAY_STATELESS=1/0 forces the mode; by default it is on when running on Vercel."""
+    v = (os.environ.get("GATEWAY_STATELESS") or "auto").strip().lower()
+    if v in {"1", "true", "yes", "on"}:
+        return True
+    if v in {"0", "false", "no", "off"}:
+        return False
+    return bool(os.environ.get("VERCEL"))
+
+
 def _float(name: str, default: float) -> float:
     v = os.environ.get(name)
     return default if not v else float(v)
@@ -77,6 +87,12 @@ class Settings:
     session_ttl_seconds: int = 1800
     history_turns: int = 8
 
+    # Serverless hosting (Vercel): keep nothing in process memory between requests. Conversation
+    # memory travels with the robot as a sealed token (memory.py); reply audio uses sealed tickets.
+    stateless: bool = False
+    context_max_chars: int = 2400   # size cap of the robot's context token (its buffer is 3000)
+    context_history_turns: int = 4  # exchanges carried in the token for the language model
+
     log_transcripts: bool = False   # children's speech is not logged unless you opt in
     allow_debug_transcript: bool = False  # X-Debug-Transcript header (test environments only)
     extra: dict = field(default_factory=dict)
@@ -112,6 +128,9 @@ class Settings:
             audio_ttl_seconds=_int("AUDIO_TTL_SECONDS", 120),
             session_ttl_seconds=_int("SESSION_TTL_SECONDS", 1800),
             history_turns=_int("HISTORY_TURNS", 8),
+            stateless=_stateless(),
+            context_max_chars=_int("CONTEXT_MAX_CHARS", 2400),
+            context_history_turns=_int("CONTEXT_HISTORY_TURNS", 4),
             log_transcripts=_bool("LOG_TRANSCRIPTS", False),
             allow_debug_transcript=_bool("ALLOW_DEBUG_TRANSCRIPT", False),
         )

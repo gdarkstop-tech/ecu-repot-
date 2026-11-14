@@ -57,5 +57,6 @@ class LanguageModel(Protocol):
 
 class TextToSpeech(Protocol):
     name: str
+    rate: int  # sample rate of the PCM it returns (needed before synthesis on serverless hosts)
 
     def synthesize(self, text: str, language: str) -> Speech: ...

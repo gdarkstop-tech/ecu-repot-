@@ -64,7 +64,8 @@ are never printed, logged or returned, and are never silently truncated (too lon
 
 ### Events (robot → laptop)
 
-`hello`, `status`, `ack`, `state` (`from`, `to`, `reason`: request/timeout/mute/unmute/startup_done/fault,
+`hello`, `status` (its `gateway` object includes `memory`: true while the robot holds a conversation
+token), `ack`, `state` (`from`, `to`, `reason`: request/timeout/mute/unmute/startup_done/fault,
 `error`), `mute`, `selftest` (`step`, `total`, `name` / `done`), `turn` (`stage`: speech_start,
 submitted, reply, spoken, ignored, discarded, dropped, not_sent, failed, audio_missing), `log`
 (`lvl`, `msg`), `config`, `config_saved`, `i2c_scan`, `mic_test`, `wifi_scan`, `loopback`.
@@ -81,6 +82,18 @@ All requests: `Authorization: Bearer <device token>`, plus `X-Robot-Lang` (auto/
 (the gateway then skips text-to-speech, asks the model for ≤ 25 words, and adds
 `display.long_text` / `display.long_rtl`: the whole answer, shaped for the OLED, ≤ 600 bytes).
 HTTPS only in production.
+
+**Conversation memory (`ctx` / `X-Robot-Context`).** Every answered turn's reply carries `ctx`, an
+opaque token (base64url, ≤ 2400 characters) sealed by the gateway with AES-256-GCM: the tutor
+state and the last few exchanges, bound to the device, valid for 30 minutes. The robot keeps it in
+RAM only and sends it back unchanged in the `X-Robot-Context` header of its next turn. This lets a
+serverless gateway (Vercel), where consecutive requests can reach different instances, continue the
+conversation without any server memory. Rules for the robot: `ctx` present → replace the stored
+token; `ctx` absent (ignored turn, older gateway) → keep it; `ctx` empty or invalid (not base64url,
+longer than 3000) → clear it. The gateway treats a missing, expired, foreign or altered token as
+the start of a new conversation (never as an error). Robots with firmware < 0.3.0 send no token:
+on a long-running host (Docker) the gateway still remembers them in memory; on Vercel each of their
+turns starts fresh.
 
 ### `POST /v1/turns` — one spoken utterance
 
@@ -116,14 +129,26 @@ HTTPS only in production.
 - Arabic `oled_text`, `value` and `caption` are **pre-shaped presentation forms in visual order**
   (`rtl: true`); the robot has no shaping engine. `oled_text` ≤ 150 bytes, `value` ≤ 32 bytes.
 - `emotion` ∈ happy, sad, surprised, idle, thinking (the robot ignores anything else).
-- The robot accepts `audio.path` only as a relative `/v1/...` path on the same gateway
-  (so its token can never be sent elsewhere), `format` = `pcm_s16le`, `sample_rate` ∈
-  8000/16000/22050/24000. Replies over 8 KB are rejected.
+- The robot accepts `audio.path` only as a relative `/v1/...` path (≤ 1023 characters of
+  `[A-Za-z0-9/_.-]`, no `..`) on the same gateway (so its token can never be sent elsewhere),
+  `format` = `pcm_s16le`, `sample_rate` ∈ 8000/16000/22050/24000. `bytes` / `duration_ms` are
+  present only when known (a serverless gateway synthesises speech when the audio is fetched).
+  Replies over 12 KB are rejected. Bodies may use `Content-Length` or chunked transfer encoding.
 
 ### `GET /v1/turns/{id}/audio`
 
-Reply speech, `audio/L16;rate=N;channels=1` with `Content-Length`. One-time fetch, only by the
-device that made the turn, expires after 120 s.
+Reply speech, `audio/L16;rate=N;channels=1`. Only the device that made the turn can fetch it;
+it expires after 120 s. On a long-running host the audio is stored once and deleted after the
+first fetch. On a serverless host `{id}` is a sealed ticket (text, language, rate, expiry; bound
+to the device) and the speech is synthesised during the GET, so a repeat fetch within 120 s is
+possible (same device only). Audio is capped at 4 MB.
+
+### `GET /healthz`
+
+No authentication; never returns keys or secrets. `ok` (false + HTTP 503 when a provider could not
+be configured, see `errors`), `version`, `stt`, `llm`, `tts`, `devices` (registered robots),
+`stateless`, `memory` (`context` or `context+server`), `context_key` (`CONTEXT_SECRET` / `derived` /
+`random` — where the sealing key comes from), `warnings` (configuration problems in plain words).
 
 ### Errors
 

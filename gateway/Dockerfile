@@ -19,5 +19,6 @@ USER gateway
 
 ENV PORT=8080 PYTHONUNBUFFERED=1
 EXPOSE 8080
-# One worker: sessions, rate limits and reply audio are kept in memory (see docs/ARCHITECTURE.md).
+# One worker: rate limits and one-time reply audio are kept in memory (ADR-10). Conversation memory
+# also travels with the robot as a sealed token, so set CONTEXT_SECRET here too (ADR-11).
 CMD ["sh", "-c", "uvicorn --factory robot_gateway.app:app_factory --host 0.0.0.0 --port ${PORT} --workers 1 --proxy-headers"]

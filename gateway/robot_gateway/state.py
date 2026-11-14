@@ -1,7 +1,9 @@
-"""In-memory runtime state: rate limits, tutor sessions, and one-time reply audio.
+"""In-process runtime state: rate limits, tutor sessions, and one-time reply audio.
 
-Single-process by design (run one worker). Scaling out needs a shared store (e.g. Redis)
-and sticky routing; see docs/ARCHITECTURE.md.
+Used on long-running hosts (Docker, a VPS: one worker). On serverless hosts (Vercel) the
+gateway runs stateless instead: conversation memory travels with the robot as a sealed token
+(memory.py) and reply audio is described by a sealed ticket (speech.py). The rate limiter
+then only protects each instance (best effort); see docs/ARCHITECTURE.md (ADR-11).
 Privacy: reply audio is held only until the robot fetches it (or the TTL expires); the
 robot's microphone audio is never stored.
 """
@@ -56,6 +58,12 @@ class SessionStore:
                 s = self._s[device_id] = Session(device_id)
             s.last_seen = now
             return s
+
+    def put(self, session: Session) -> None:
+        """Replace a device's session (restored from the robot's context token)."""
+        session.last_seen = time.monotonic()
+        with self._lock:
+            self._s[session.device_id] = session
 
 
 @dataclass

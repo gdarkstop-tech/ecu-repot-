@@ -9,12 +9,18 @@
 //                Security: TLS validated against pinned public root CAs; the device token is
 //                sent ONLY to the configured gateway origin (audio URLs must be relative paths
 //                under /v1/); every reply field is bounds-checked and allow-listed.
+//                Memory: the gateway's sealed conversation token ("ctx") is kept in RAM only and
+//                sent back as X-Robot-Context, so a serverless gateway (Vercel) can continue
+//                the conversation. It is lost on reboot by design.
+//                Bodies are read with a size cap and a stall timeout, whatever the framing
+//                (Content-Length or chunked).
 #pragma once
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
 #include "conversation.h"
+#include "gateway_reply.h"
 #include "hw_audio.h"
 #include "hw_settings.h"
 
@@ -64,6 +70,7 @@ class GatewayClient : public IGateway {
   bool authRejected() const { return authRejected_; }
   void clearAuthRejected() { authRejected_ = false; }
   uint32_t lastLatencyMs() const { return lastLatencyMs_; }
+  bool hasContext() const { return contextLen_ > 0; }
 
  private:
   enum class Job : uint8_t { None = 0, Utterance, Text };
@@ -71,8 +78,7 @@ class GatewayClient : public IGateway {
   static void taskFn(void* self);
   void run();
   void execute();
-  bool parseReply(const char* body, size_t len, char* audioPath, size_t pathCap, uint32_t& audioRate);
-  void streamAudio(const char* path, uint32_t rate);
+  bool parseReply(const char* body, size_t len, uint32_t& audioRate);
   void fail(const char* code, bool recoverable);
   void log(const char* level, const char* fmt, ...);
 
@@ -99,6 +105,12 @@ class GatewayClient : public IGateway {
   volatile bool lastOk_ = false;
   volatile bool authRejected_ = false;
   volatile uint32_t lastLatencyMs_ = 0;
+
+  // Used only by the gateway task.
+  char* replyBuf_ = nullptr;                     // kMaxReplyBytes, in PSRAM
+  char audioPath_[kMaxAudioPathLen + 1] = {0};
+  char context_[kMaxContextLen + 1] = {0};       // sealed by the gateway; opaque to the robot
+  volatile uint16_t contextLen_ = 0;
 };
 
 }  // namespace robot

@@ -30,13 +30,17 @@ static std::string fixture(const char* name) {
 struct Parsed {
   bool ok;
   GatewayReply r;
-  char path[96];
+  char path[kMaxAudioPathLen + 1];
   uint32_t rate;
+  char ctx[kMaxContextLen + 1];
+  ContextUpdate upd;
 };
 
 static Parsed parse(const std::string& body) {
   Parsed p;
-  p.ok = parseGatewayReply(body.data(), body.size(), p.r, p.path, sizeof(p.path), p.rate);
+  strcpy(p.ctx, "previous");
+  p.ok = parseGatewayReply(body.data(), body.size(), p.r, p.path, sizeof(p.path), p.rate, p.ctx, sizeof(p.ctx),
+                           &p.upd);
   return p;
 }
 
@@ -82,7 +86,7 @@ void test_long_arabic_story_fits_buffers() {
   TEST_ASSERT_TRUE(p.r.rtl);
   TEST_ASSERT_TRUE(strlen(p.r.oledText) > 0 && strlen(p.r.oledText) <= kMaxTextBytes);
   TEST_ASSERT_TRUE(utf8IsValid(p.r.oledText));
-  TEST_ASSERT_TRUE(fixture("story_ar.json").size() < 8192);  // firmware's maximum reply size
+  TEST_ASSERT_TRUE(fixture("story_ar.json").size() < kMaxReplyBytes);
 }
 
 void test_vocab_word_card() {
@@ -147,6 +151,76 @@ void test_hostile_fields_sanitised() {
   TEST_ASSERT_FALSE(parse("{\"display\":{\"oled_text\":\"\xC3\x28\"}}").ok);  // invalid UTF-8
 }
 
+void test_every_reply_carries_a_context_token_except_ignored_turns() {
+  const char* files[] = {"math_en.json", "alphabet_ar.json", "story_ar.json", "textmode_story_ar.json",
+                         "vercel_math_turn1.json", "vercel_math_turn2.json", "vercel_story_ar.json",
+                         "vercel_audio_ticket.json"};
+  for (const char* f : files) {
+    std::string body = fixture(f);
+    TEST_ASSERT_TRUE_MESSAGE(body.size() < kMaxReplyBytes, f);
+    Parsed p = parse(body);
+    TEST_ASSERT_TRUE_MESSAGE(p.ok, f);
+    TEST_ASSERT_EQUAL_MESSAGE((int)ContextUpdate::Set, (int)p.upd, f);
+    TEST_ASSERT_TRUE_MESSAGE(strlen(p.ctx) > 100 && strlen(p.ctx) <= 2400, f);  // gateway's cap
+    TEST_ASSERT_TRUE(isSafeContextToken(p.ctx, sizeof(p.ctx)));
+  }
+  Parsed ig = parse(fixture("ignore.json"));
+  TEST_ASSERT_TRUE(ig.ok);
+  TEST_ASSERT_EQUAL((int)ContextUpdate::Keep, (int)ig.upd);  // nothing happened: keep the old token
+  TEST_ASSERT_EQUAL_STRING("previous", ig.ctx);
+}
+
+void test_vercel_conversation_replies() {
+  Parsed t1 = parse(fixture("vercel_math_turn1.json"));
+  TEST_ASSERT_TRUE(t1.ok);
+  TEST_ASSERT_FALSE(t1.r.hasAudio);  // text-only robot
+  TEST_ASSERT_EQUAL((int)ContentKind::Math, (int)t1.r.contentKind);
+  Parsed t2 = parse(fixture("vercel_math_turn2.json"));
+  TEST_ASSERT_TRUE(t2.ok);
+  TEST_ASSERT_TRUE(strncmp(t2.r.longText, "Correct", 7) == 0);  // the gateway remembered the question
+  TEST_ASSERT_TRUE(strcmp(t1.ctx, t2.ctx) != 0);
+  Parsed ar = parse(fixture("vercel_story_ar.json"));
+  TEST_ASSERT_TRUE(ar.ok && ar.r.longRtl && utf8IsValid(ar.r.longText));
+}
+
+void test_sealed_audio_ticket_path_is_accepted() {
+  Parsed p = parse(fixture("vercel_audio_ticket.json"));
+  TEST_ASSERT_TRUE(p.ok);
+  TEST_ASSERT_TRUE(p.r.hasAudio);
+  TEST_ASSERT_EQUAL_UINT32(16000, p.rate);
+  TEST_ASSERT_TRUE(strlen(p.path) > 95 && strlen(p.path) <= kMaxAudioPathLen);
+  TEST_ASSERT_EQUAL_INT(0, strncmp(p.path, "/v1/turns/", 10));
+  std::string ok = "/v1/" + std::string(kMaxAudioPathLen - 4, 'a');
+  std::string tooLong = ok + "a";
+  TEST_ASSERT_TRUE(isSafeAudioPath(ok.c_str()));
+  TEST_ASSERT_FALSE(isSafeAudioPath(tooLong.c_str()));
+}
+
+void test_hostile_context_tokens_clear_the_stored_one() {
+  std::string longTok = std::string(kMaxContextLen + 1, 'a');
+  std::string bodies[] = {
+      R"({"display":{},"ctx":""})",
+      R"({"display":{},"ctx":123})",
+      R"({"display":{},"ctx":"abc def"})",
+      "{\"display\":{},\"ctx\":\"abc\\r\\nX-Evil: 1\"}",
+      R"({"display":{},"ctx":"abc.def"})",
+      R"({"display":{},"ctx":")" + longTok + R"("})",
+  };
+  for (const std::string& b : bodies) {
+    Parsed p = parse(b);
+    TEST_ASSERT_TRUE_MESSAGE(p.ok, b.c_str());
+    TEST_ASSERT_EQUAL_MESSAGE((int)ContextUpdate::Clear, (int)p.upd, b.c_str());
+    TEST_ASSERT_EQUAL_STRING("previous", p.ctx);  // never partially overwritten
+  }
+  Parsed bad = parse(R"({"ctx":"validtoken123")");  // broken JSON: nothing changes
+  TEST_ASSERT_FALSE(bad.ok);
+  TEST_ASSERT_EQUAL((int)ContextUpdate::Keep, (int)bad.upd);
+  TEST_ASSERT_EQUAL_STRING("previous", bad.ctx);
+  char small[8];
+  TEST_ASSERT_FALSE(isSafeContextToken("abcdefgh", sizeof(small)));  // does not fit the buffer
+  TEST_ASSERT_TRUE(isSafeContextToken("abc_DEF-123", 16));
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_math_en);
@@ -158,5 +232,9 @@ int main() {
   RUN_TEST(test_text_mode_replies_carry_full_answer_without_audio);
   RUN_TEST(test_hostile_audio_urls_rejected);
   RUN_TEST(test_hostile_fields_sanitised);
+  RUN_TEST(test_every_reply_carries_a_context_token_except_ignored_turns);
+  RUN_TEST(test_vercel_conversation_replies);
+  RUN_TEST(test_sealed_audio_ticket_path_is_accepted);
+  RUN_TEST(test_hostile_context_tokens_clear_the_stored_one);
   return UNITY_END();
 }

@@ -29,7 +29,7 @@
 #include "vad.h"
 
 #ifndef ROBOT_FW_VERSION
-#define ROBOT_FW_VERSION "0.2.0"
+#define ROBOT_FW_VERSION "0.3.0"
 #endif
 
 using namespace robot;
@@ -101,6 +101,7 @@ class Platform : public IRobotPlatform {
     i.ip = ip;
     i.gatewayConfigured = g_settings.gatewayConfigured();
     i.gatewayOk = g_gw.lastOk();
+    i.gatewayMemory = g_gw.hasContext();
     i.tokenSet = g_settings.deviceToken[0] != 0;
     i.lang = g_settings.lang;
     i.childAge = g_settings.childAge;

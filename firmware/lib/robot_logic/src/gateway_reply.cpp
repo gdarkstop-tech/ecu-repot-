@@ -9,10 +9,23 @@
 namespace robot {
 
 bool isSafeAudioPath(const char* p) {
-  if (!p || strncmp(p, "/v1/", 4) != 0 || strlen(p) > 95 || strstr(p, "..")) return false;
+  if (!p || strncmp(p, "/v1/", 4) != 0 || strlen(p) > kMaxAudioPathLen || strstr(p, "..")) return false;
   for (const char* c = p; *c; c++) {
     if (!((*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') || (*c >= '0' && *c <= '9') || *c == '/' ||
           *c == '_' || *c == '-' || *c == '.'))
+      return false;
+  }
+  return true;
+}
+
+// base64url only: the token goes into an HTTP header, so no spaces, CR/LF or ':' can get in.
+bool isSafeContextToken(const char* t, size_t cap) {
+  if (!t || !*t) return false;
+  size_t n = 0;
+  for (const char* c = t; *c; c++, n++) {
+    if (n + 1 >= cap || n >= kMaxContextLen) return false;
+    if (!((*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') || (*c >= '0' && *c <= '9') || *c == '_' ||
+          *c == '-'))
       return false;
   }
   return true;
@@ -24,7 +37,8 @@ static bool allowedEmotion(Expression e) {
 }
 
 bool parseGatewayReply(const char* body, size_t len, GatewayReply& out, char* audioPath, size_t pathCap,
-                       uint32_t& audioRate) {
+                       uint32_t& audioRate, char* ctxOut, size_t ctxCap, ContextUpdate* ctxUpdate) {
+  if (ctxUpdate) *ctxUpdate = ContextUpdate::Keep;
   JsonDocument doc;
   if (deserializeJson(doc, body, len, DeserializationOption::NestingLimit(4))) return false;
   if (!doc.is<JsonObjectConst>()) return false;
@@ -69,6 +83,18 @@ bool parseGatewayReply(const char* body, size_t len, GatewayReply& out, char* au
     }
   }
   out = r;
+  if (ctxUpdate && ctxOut && ctxCap) {
+    JsonVariantConst ctx = doc["ctx"];
+    if (!ctx.isNull()) {
+      const char* tok = ctx.is<const char*>() ? ctx.as<const char*>() : "";
+      if (isSafeContextToken(tok, ctxCap)) {
+        snprintf(ctxOut, ctxCap, "%s", tok);
+        *ctxUpdate = ContextUpdate::Set;
+      } else {
+        *ctxUpdate = ContextUpdate::Clear;
+      }
+    }
+  }
   return true;
 }
 

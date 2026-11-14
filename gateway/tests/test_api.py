@@ -3,10 +3,21 @@ from conftest import AUTH, AUTH2, L16, make_client, tone
 from robot_gateway.config import Settings
 
 
-def test_health_has_no_secrets(client):
-    body = client.get("/healthz").json()
-    assert body["ok"] and body["devices"] == 2
-    assert "key" not in str(body).lower()
+def test_health_has_no_secrets(monkeypatch):
+    secrets = {"ANTHROPIC_API_KEY": "sk-ant-SENTINEL-1111", "GROQ_API_KEY": "gsk_SENTINEL-2222",
+               "CONTEXT_SECRET": "ctx-SENTINEL-3333-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+    for k, v in secrets.items():
+        monkeypatch.setenv(k, v)
+    from conftest import TOKEN
+    from robot_gateway.devices import hash_token
+
+    r = make_client().get("/healthz")
+    body = r.json()
+    assert r.status_code == 200 and body["ok"] and body["devices"] == 2
+    assert body["context_key"] == "CONTEXT_SECRET" and body["errors"] == []
+    text = r.text
+    for value in [*secrets.values(), TOKEN, hash_token(TOKEN)]:
+        assert value not in text and value[:12] not in text
 
 
 def test_auth_required_everywhere(client):

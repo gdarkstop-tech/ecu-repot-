@@ -5,4 +5,4 @@ checks, the tutor / language model, and text-to-speech, and returns display data
 reply audio. All AI provider credentials live here, never on the robot.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

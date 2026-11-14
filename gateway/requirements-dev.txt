@@ -1,0 +1,3 @@
+# Everything needed to run the gateway tests: pip install -r requirements-dev.txt
+-r requirements.txt
+pytest>=8
