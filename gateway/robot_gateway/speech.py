@@ -8,12 +8,19 @@ TicketSpeech (serverless host): nothing is kept. The audio path carries a sealed
     shared storage: they are device-bound and expire after AUDIO_TTL_SECONDS instead.
 
 Robots without a speaker never request audio (X-Robot-Output: text), so neither path runs.
+
+Providers that synthesise in pieces (Groq Orpheus: <= 200 characters per request) expose
+synthesize_chunks(); TicketSpeech then streams each piece as soon as it is ready, so the robot
+starts speaking after the first piece. An error on the first piece is returned as an HTTP error
+(429 for a rate limit); a later one just ends the audio early.
 """
 from __future__ import annotations
 
+import itertools
 import logging
 import re
 import time
+from typing import Iterator
 
 from .providers.base import ProviderError, TextToSpeech
 from .sealing import Sealer
@@ -82,12 +89,38 @@ class TicketSpeech:
             cut = cut[: int(len(cut) * 0.8)].rsplit(" ", 1)[0]  # very long reply: speak its beginning
         return None
 
-    def fetch(self, turn_id: str, device_id: str, now: float | None = None) -> tuple[bytes, int] | None:
+    def fetch(self, turn_id: str, device_id: str,
+              now: float | None = None) -> tuple[bytes | Iterator[bytes], int] | None:
         t = self.sealer.open(turn_id, device_id, TICKET_MAX_CHARS)
         now = time.time() if now is None else now
         if t is None or not isinstance(t.get("e"), int) or t["e"] < now or not isinstance(t.get("x"), str):
             return None
-        speech = self.tts.synthesize(t["x"], t.get("l") if t.get("l") in ("en", "ar") else "en")
-        if speech.sample_rate != t.get("r"):
+        lang = t.get("l") if t.get("l") in ("en", "ar") else "en"
+        chunked = getattr(self.tts, "synthesize_chunks", None)
+        if chunked is None:
+            speech = self.tts.synthesize(t["x"], lang)
+            if speech.sample_rate != t.get("r"):
+                raise ProviderError("tts_rate_mismatch", retryable=False)
+            return _bounded(speech.pcm), speech.sample_rate
+        pieces = iter(chunked(t["x"], lang))
+        first = next(pieces, None)  # ProviderError here becomes the HTTP status of the GET
+        if first is None:
+            return b"", t["r"]
+        if first.sample_rate != t.get("r"):
             raise ProviderError("tts_rate_mismatch", retryable=False)
-        return _bounded(speech.pcm), speech.sample_rate
+        return _stream(itertools.chain([first], pieces)), first.sample_rate
+
+
+def _stream(pieces) -> Iterator[bytes]:
+    """Yield PCM piece by piece, never more than MAX_AUDIO_BYTES in total."""
+    sent = 0
+    try:
+        for sp in pieces:
+            pcm = sp.pcm[: max(0, MAX_AUDIO_BYTES - sent)]
+            pcm = pcm[: len(pcm) - len(pcm) % 2]
+            if not pcm:
+                break
+            sent += len(pcm)
+            yield pcm
+    except ProviderError as exc:  # a later piece failed: the robot plays what it already has
+        log.warning("speech stream ended early: %s", exc.code)

@@ -221,6 +221,21 @@ void test_hostile_context_tokens_clear_the_stored_one() {
   TEST_ASSERT_TRUE(isSafeContextToken("abc_DEF-123", 16));
 }
 
+void test_groq_replies_speaker_and_text_robots() {
+  // Groq gpt-oss answer + Orpheus speech ticket (mocked Groq API), as a speaker robot receives it.
+  Parsed sp = parse(fixture("groq_speaker_en.json"));
+  TEST_ASSERT_TRUE(sp.ok);
+  TEST_ASSERT_TRUE(sp.r.hasAudio);
+  TEST_ASSERT_EQUAL_UINT32(24000, sp.rate);  // Orpheus' rate, one the speaker plays
+  TEST_ASSERT_TRUE(strlen(sp.path) > 95 && strlen(sp.path) <= kMaxAudioPathLen);
+  TEST_ASSERT_TRUE(strncmp(sp.r.longText, "The sky looks blue", 18) == 0);  // shown if speech fails
+  TEST_ASSERT_EQUAL((int)ContextUpdate::Set, (int)sp.upd);
+  Parsed ar = parse(fixture("groq_text_ar.json"));
+  TEST_ASSERT_TRUE(ar.ok);
+  TEST_ASSERT_FALSE(ar.r.hasAudio);
+  TEST_ASSERT_TRUE(ar.r.longRtl && utf8IsValid(ar.r.longText) && strlen(ar.r.longText) > 20);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_math_en);
@@ -236,5 +251,6 @@ int main() {
   RUN_TEST(test_vercel_conversation_replies);
   RUN_TEST(test_sealed_audio_ticket_path_is_accepted);
   RUN_TEST(test_hostile_context_tokens_clear_the_stored_one);
+  RUN_TEST(test_groq_replies_speaker_and_text_robots);
   return UNITY_END();
 }

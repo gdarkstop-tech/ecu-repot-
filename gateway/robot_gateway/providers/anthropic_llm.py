@@ -57,8 +57,10 @@ class AnthropicLLM:
         except anthropic.PermissionDeniedError as exc:
             raise ProviderError("llm_permission_denied", retryable=False) from exc
         except anthropic.BadRequestError as exc:
-            log.warning("anthropic bad request: %s", exc.message)
-            raise ProviderError("llm_bad_request", retryable=False) from exc
+            billing = "credit balance" in str(getattr(exc, "message", "")).lower()
+            code = "llm_billing_required" if billing else "llm_bad_request"
+            log.warning("provider error: provider=anthropic what=llm model=%s status=400 -> %s", self.model, code)
+            raise ProviderError(code, retryable=False) from exc
         except anthropic.RateLimitError as exc:
             raise ProviderError("llm_rate_limited") from exc
         except anthropic.APIStatusError as exc:

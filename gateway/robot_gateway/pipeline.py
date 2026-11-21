@@ -56,6 +56,9 @@ LANG_NAMES = {"en": "English", "ar": "Arabic (simple Modern Standard Arabic)"}
 SCREEN_ONLY_NOTE = ("\n\nThis robot has no speaker right now: your answer is shown as scrolling text on a "
                     "tiny 128x64 screen. Keep it under 25 words.")
 
+# Added when the answer is spoken: free speech quotas are small, and short answers suit a child.
+SPOKEN_NOTE = "\n\nYour answer will be spoken aloud. Keep it under 40 words."
+
 LONG_TEXT_MAX_BYTES = 600  # the robot's reading buffer (Arabic presentation forms are 3 bytes each)
 
 
@@ -145,7 +148,8 @@ class TurnPipeline:
             value = value.encode("utf-8")[:32].decode("utf-8", "ignore")
             content = {"kind": reply.content.kind, "value": value, "caption": caption}
 
-        long_text, long_rtl = to_oled(reply.text, LONG_TEXT_MAX_BYTES) if screen_only else ("", False)
+        # The whole answer as OLED text, always: a speaker robot shows it if the speech fails.
+        long_text, long_rtl = to_oled(reply.text, LONG_TEXT_MAX_BYTES)
 
         # ---- speech (skipped entirely when the robot has no speaker)
         t2 = time.monotonic()
@@ -167,7 +171,7 @@ class TurnPipeline:
             "transcript": text,
             "reply_text": reply.text,
             "display": {"oled_text": oled_text, "rtl": rtl, "content": content,
-                        **({"long_text": long_text, "long_rtl": long_rtl} if screen_only else {})},
+                        "long_text": long_text, "long_rtl": long_rtl},
             "emotion": emotion,
             "audio": audio_info,
             "source": reply.source,
@@ -210,14 +214,18 @@ class TurnPipeline:
         if self.llm.name == "mock":
             return self.tutor.demo_answer(text, lang)
         system = SYSTEM_PROMPT.format(name=self.s.robot_name, language=LANG_NAMES[lang], age=age)
-        if screen_only:
-            system += SCREEN_ONLY_NOTE
+        system += SCREEN_ONLY_NOTE if screen_only else SPOKEN_NOTE
         history = list(session.history)[-2 * self.s.history_turns:]
         user = f"(Learning mode: {session.mode}.) The child said: «{redact_personal(text)}»"
         try:
             result = self.llm.reply(system, history, user)
         except ProviderError as exc:
             warnings.append(exc.code)
+            if exc.code.endswith("_rate_limited"):
+                # Free-plan limit reached: say so kindly. Never switch to a paid service by ourselves.
+                return TutorReply("So many questions! My brain needs a one-minute break. Then ask me again!"
+                                  if lang != "ar" else "أسئلة كثيرة! عقلي يحتاج استراحة دقيقة. ثم اسألني مرة أخرى!",
+                                  lang, emotion="sad", source="fallback")
             return TutorReply("Oops, my brain needs a little rest. Can you ask me again in a moment?"
                               if lang != "ar" else "عذرا، عقلي يحتاج راحة قصيرة. هل تسألني مرة أخرى بعد قليل؟",
                               lang, emotion="sad", source="fallback")

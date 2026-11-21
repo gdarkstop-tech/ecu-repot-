@@ -27,8 +27,8 @@ Code: https://github.com/gdarkstop-tech/ecu-repot- · branch `claude/vigilant-ga
 | | |
 |---|---|
 | ✅ Builds | `diag` and `robot` firmware compile for ESP32-S3 N16R8 |
-| 🟡 Tested without the physical robot | 88 firmware unit tests, 81 gateway tests, simulator protocol checks, gateway over real HTTP, Vercel build (local CLI) |
-| ⬜ Not yet live | A real Vercel deployment and real Claude/Groq calls (keys exist only on your side) |
+| 🟡 Tested without the physical robot | 93 firmware unit tests, 109 gateway tests (Groq API mocked), simulator protocol checks, gateway over real HTTP, Vercel build (local CLI) |
+| ⬜ Needs your deployment | Real Groq answers and Orpheus voice with your key: [docs/VERCEL_SETUP.md](docs/VERCEL_SETUP.md) Part G |
 | ⬜ Not yet on hardware | Flashing, OLED, audio, Wi-Fi, standalone conversation |
 
 Details and the full checklist: [docs/HARDWARE_VERIFICATION_REPORT.md](docs/HARDWARE_VERIFICATION_REPORT.md).
@@ -140,9 +140,9 @@ memory for robots with older firmware.
 
 | Setting | Options |
 |---|---|
-| `LLM_PROVIDER` | `mock` (tutor + demo answers), `anthropic` (Claude, default model `claude-haiku-5-5`, effort `low`), `openai` (ChatGPT or any OpenAI-compatible server) |
-| `STT_PROVIDER` | `mock`, `groq` (Whisper Large v3 Turbo, Arabic + English), `openai` (set `STT_MODEL`) |
-| `TTS_PROVIDER` | `espeak` (free, robotic), `openai` (`OPENAI_TTS_MODEL`), `mock` (chime) |
+| `LLM_PROVIDER` | `groq` (default when `GROQ_API_KEY` is set: `openai/gpt-oss-120b`, change with `GROQ_LLM_MODEL`), `anthropic` (Claude, `claude-haiku-5-5`; needs Anthropic credits), `openai`, `mock` (tutor + demo answers) |
+| `STT_PROVIDER` | `groq` (Whisper Large v3 Turbo, Arabic + English; default with a Groq key), `openai` (set `STT_MODEL`), `mock` |
+| `TTS_PROVIDER` | `groq` (natural Orpheus voice, English + Saudi Arabic, 24 kHz), `espeak` (free, robotic), `openai` (`OPENAI_TTS_MODEL`), `mock` (chime) |
 
 Test a deployment from the laptop exactly as the robot would:
 

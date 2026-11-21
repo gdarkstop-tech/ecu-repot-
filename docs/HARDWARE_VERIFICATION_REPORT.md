@@ -1,6 +1,6 @@
 # Hardware verification report — current status
 
-**Date:** 2026-11-14 · **Firmware:** 0.3.0 · **Gateway:** 0.3.0
+**Date:** 2026-11-21 · **Firmware:** 0.4.0 · **Gateway:** 0.4.0
 
 > **The physical ESP32-S3 has not been flashed or tested yet.** This work was done in a cloud
 > development container that has no access to the laptop's USB ports (no Remote Control folder was
@@ -30,8 +30,10 @@ Legend: ✅ verified · 🟡 verified without the physical robot (build, unit te
 
 | Area | Result |
 |---|---|
-| Firmware unit tests (host) | **88/88 pass** (`pio test -e native`), incl. the firmware↔gateway contract (13), the HTTP body decoder for Content-Length/chunked/until-close replies (6), text-only reading mode |
-| Gateway tests | **81/81 pass**: auth, size/format limits, rate limit, device-bound audio, math engine (EN/AR words, Arabic-Indic digits), tutor modes/difficulty/quiz, safety filters, LLM output cleaning + arithmetic correction, Claude request shape, Groq/OpenAI STT adapter, text-only mode, eSpeak EN/AR, and 14 serverless tests (below) |
+| Firmware unit tests (host) | **93/93 pass** (`pio test -e native`), incl. the firmware↔gateway contract (14), the HTTP body decoder (7, one feeding the exact chunked bytes a real uvicorn server streamed for a two-piece Orpheus answer), text-only reading mode, and the speech-failure → text fallback (3) |
+| Groq (mocked API) | **28 tests** with a mocked Groq API (httpx MockTransport): gpt-oss request shape (`include_reasoning:false`, `reasoning_effort:low`), English/Arabic open questions reaching the model with memory, tutor/safety answering without calling Groq, 429 retry policy, error mapping, safe logs (no key/text/org id), Orpheus pieces ≤ 200 chars, WAV formats → 24 kHz mono s16 with −1 dBFS peak, streamed audio from another instance, 429 on the audio fetch. **Not live**: no Groq key was used in this session |
+| Groq endpoint reachability | Real `api.groq.com` chat and speech endpoints called with a deliberately fake key: both answered `401 invalid_api_key`, mapped to `llm_auth_failed` / `tts_auth_failed`; the fake key never appeared in logs. Proves URLs and error format only — not answers or audio |
+| Gateway tests | **109/109 pass** (81 earlier + 28 Groq): auth, size/format limits, rate limit, device-bound audio, math engine (EN/AR words, Arabic-Indic digits), tutor modes/difficulty/quiz, safety filters, LLM output cleaning + arithmetic correction, Claude request shape, Groq/OpenAI STT adapter, text-only mode, eSpeak EN/AR, and 14 serverless tests (below) |
 | Contract | The firmware's own C++ parser reads 15 real gateway replies (EN/AR math, alphabet, story, vocab, ignore, demo, text-only, and Vercel-mode replies with conversation tokens and a sealed audio ticket) and rejects hostile ones (foreign audio URL, path traversal, bad format/rate, unknown emotion, invalid UTF-8, header-injecting or oversized context tokens) |
 | Vercel compatibility | Vercel CLI 65.16.0 `vercel build` of `gateway/` (local, no account): detects `index.py`, runtime `python3.12`, bundle ≈ 40 MB (limit 500 MB); with preset "Other" no function is built, so `vercel.json` pins `fastapi`. All dependencies have Linux x86_64 wheels for Python 3.12/3.13/3.14. Clean Python 3.12 install: 90 MB, entrypoint import 0.3 s. Two separate gateway processes sharing only `CONTEXT_SECRET`: a math lesson continued correctly while alternating between them; audio made on one was fetched from the other; tampered/foreign/expired/other-key tokens start fresh; the entrypoint writes no files (audit hook). **Not done: a live Vercel deployment and real Claude/Groq calls** (no account or keys here; vercel.com is not reachable from this session) |
 | Gateway over real HTTP | Arabic `6 × 7` → `42` with shaped subtitle + 4.9 s of speech audio; demo audio turn honest; wrong token → 401; device token absent from server log |
@@ -53,8 +55,9 @@ Each line is produced by `tools/verify_hardware.py` unless marked *manual*.
 - [ ] Speaker tone heard (operator); mic→speaker loopback heard (operator)
 
 **Phase 3 — network + AI**
-- [ ] Vercel deployment: `/healthz` shows `"ok":true`, `"stt":"groq"`, `"llm":"anthropic"`, `"devices":1`, `"context_key":"CONTEXT_SECRET"` (*manual*, docs/VERCEL_SETUP.md Part C)
-- [ ] Laptop client against Vercel: Claude answers (`"source":"llm"`), and a two-turn math exchange is remembered (*manual*, Part D)
+- [ ] Vercel deployment: `/healthz` shows `"ok":true`, `"version":"0.4.0"`, `"llm":"groq"`, `"llm_model":"openai/gpt-oss-120b"`, `"devices":1`, `"context_key":"CONTEXT_SECRET"` (*manual*, docs/VERCEL_SETUP.md Part G)
+- [ ] Laptop client against Vercel: "Why do cats purr?" → `"source":"llm"` (Groq), Arabic question answered in Arabic, two-turn math remembered (*manual*, Part D)
+- [ ] Voice: `gateway_client.py` without `--no-speaker` saves `reply.wav` at 24 kHz that sounds right; robot with `speaker on` speaks the answer at `volume 70`; after the daily voice quota the robot shows the answer as text (*manual*)
 - [ ] Wi-Fi connects (2.4 GHz); gateway text turn produces reply → spoken or scrolled on the OLED; `status` shows `"memory":true` after the first answer
 
 **Phase 4 — standalone (manual, laptop disconnected)** — see README section 7

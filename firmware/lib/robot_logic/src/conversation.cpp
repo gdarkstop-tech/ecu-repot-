@@ -168,12 +168,7 @@ void Conversation::tick(uint32_t now) {
       phaseSince_ = now;
       audioSeen_ = false;
       if (!reply_.hasAudio && reply_.longText[0]) {
-        // Text-only robot: a happy face, then the whole answer scrolls, paced for reading.
-        uint32_t readMs = readingTimeMs(reply_.longText, reply_.longRtl);
-        textHoldMs_ = cfg_.textIntroMs + readMs;
-        robot_.requestState(RobotState::Speaking, now, textHoldMs_ + 3000);
-        robot_.setExpressionOverride(Expression::Happy, now, cfg_.textIntroMs);
-        robot_.showReading(reply_.longText, reply_.longRtl, now + cfg_.textIntroMs, readMs);
+        startReading(now);  // text-only robot (or no speech for this answer)
       } else {
         textHoldMs_ = 2500;  // subtitle-only reply: let it be read briefly
         robot_.requestState(RobotState::Speaking, now);
@@ -195,6 +190,17 @@ void Conversation::tick(uint32_t now) {
       uint32_t elapsed = now - phaseSince_;
       bool noAudioExpected = !reply_.hasAudio && elapsed >= textHoldMs_;  // let the text be read
       bool audioNeverStarted = reply_.hasAudio && !audioSeen_ && elapsed >= cfg_.playbackStartGraceMs;
+      bool audioFailed = reply_.hasAudio && audioSeen_ && !active && audio_.lastStreamFailed();
+      if ((audioFailed || audioNeverStarted) && reply_.longText[0]) {
+        // No speech for this answer (e.g. the voice service's free quota is used up): show the
+        // whole answer as text instead of a short subtitle, then listen again as usual.
+        emitTurnEvent(audioFailed ? "audio_failed" : "audio_missing");
+        reply_.hasAudio = false;
+        audioSeen_ = false;
+        phaseSince_ = now;
+        startReading(now);
+        return;
+      }
       if ((audioSeen_ && !active) || noAudioExpected || audioNeverStarted) {
         if (audioNeverStarted) emitTurnEvent("audio_missing");
         finishSpeaking(now);
@@ -206,6 +212,15 @@ void Conversation::tick(uint32_t now) {
       if ((uint32_t)(now - phaseSince_) >= cfg_.echoTailMs) rearm(now);
       return;
   }
+}
+
+// A happy face, then the whole answer scrolls, paced for reading.
+void Conversation::startReading(uint32_t now) {
+  uint32_t readMs = readingTimeMs(reply_.longText, reply_.longRtl);
+  textHoldMs_ = cfg_.textIntroMs + readMs;
+  robot_.requestState(RobotState::Speaking, now, textHoldMs_ + 3000);
+  robot_.setExpressionOverride(Expression::Happy, now, cfg_.textIntroMs);
+  robot_.showReading(reply_.longText, reply_.longRtl, now + cfg_.textIntroMs, readMs);
 }
 
 void Conversation::finishSpeaking(uint32_t now) {

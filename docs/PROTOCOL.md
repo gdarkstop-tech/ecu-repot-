@@ -67,7 +67,8 @@ are never printed, logged or returned, and are never silently truncated (too lon
 `hello`, `status` (its `gateway` object includes `memory`: true while the robot holds a conversation
 token), `ack`, `state` (`from`, `to`, `reason`: request/timeout/mute/unmute/startup_done/fault,
 `error`), `mute`, `selftest` (`step`, `total`, `name` / `done`), `turn` (`stage`: speech_start,
-submitted, reply, spoken, ignored, discarded, dropped, not_sent, failed, audio_missing), `log`
+submitted, reply, spoken, ignored, discarded, dropped, not_sent, failed, audio_missing,
+audio_failed), `log`
 (`lvl`, `msg`), `config`, `config_saved`, `i2c_scan`, `mic_test`, `wifi_scan`, `loopback`.
 
 The diagnostic firmware prints `{"evt":"diag","stage":...}` lines instead (chip, flash, psram,
@@ -81,7 +82,9 @@ All requests: `Authorization: Bearer <device token>`, plus `X-Robot-Lang` (auto/
 `X-Robot-Age` (3–12), `X-Robot-Fw`, and `X-Robot-Output: text` from a robot without a speaker
 (the gateway then skips text-to-speech, asks the model for ≤ 25 words, and adds
 `display.long_text` / `display.long_rtl`: the whole answer, shaped for the OLED, ≤ 600 bytes).
-HTTPS only in production.
+HTTPS only in production. Every answered reply also carries `display.long_text` /
+`display.long_rtl` (since gateway 0.4.0, also for speaker robots), so a robot whose speech cannot
+be fetched can show the whole answer instead.
 
 **Conversation memory (`ctx` / `X-Robot-Context`).** Every answered turn's reply carries `ctx`, an
 opaque token (base64url, ≤ 2400 characters) sealed by the gateway with AES-256-GCM: the tutor
@@ -134,6 +137,8 @@ turns starts fresh.
   `format` = `pcm_s16le`, `sample_rate` ∈ 8000/16000/22050/24000. `bytes` / `duration_ms` are
   present only when known (a serverless gateway synthesises speech when the audio is fetched).
   Replies over 12 KB are rejected. Bodies may use `Content-Length` or chunked transfer encoding.
+- With the Groq Orpheus voice the rate is 24000 and the audio is streamed with chunked transfer
+  encoding, one piece (≤ 200 characters of text) at a time.
 
 ### `GET /v1/turns/{id}/audio`
 
@@ -141,18 +146,23 @@ Reply speech, `audio/L16;rate=N;channels=1`. Only the device that made the turn 
 it expires after 120 s. On a long-running host the audio is stored once and deleted after the
 first fetch. On a serverless host `{id}` is a sealed ticket (text, language, rate, expiry; bound
 to the device) and the speech is synthesised during the GET, so a repeat fetch within 120 s is
-possible (same device only). Audio is capped at 4 MB.
+possible (same device only). Audio is capped at 4 MB. Errors: 429 `{"error":"tts_rate_limited"}`
+when the voice service's quota is used up, 500/502 for other provider failures, 404 for an unknown
+or expired id. Firmware ≥ 0.4.0 then shows `long_text` instead (turn event `audio_failed`).
 
 ### `GET /healthz`
 
 No authentication; never returns keys or secrets. `ok` (false + HTTP 503 when a provider could not
-be configured, see `errors`), `version`, `stt`, `llm`, `tts`, `devices` (registered robots),
+be configured, see `errors`), `version`, `stt`, `llm`, `tts`, `llm_model`, `tts_model`, `devices` (registered robots),
 `stateless`, `memory` (`context` or `context+server`), `context_key` (`CONTEXT_SECRET` / `derived` /
 `random` — where the sealing key comes from), `warnings` (configuration problems in plain words).
 
 ### Errors
 
 JSON `{"error": "<code>"}`: 401 `unauthorized`, 413 `too_large`, 415 `expected_audio_l16` /
-`unsupported_audio_format`, 429 `rate_limited`, 400 `audio_too_short` / `expected_json_text`,
-502 provider failure (retryable), 500 provider misconfiguration. The robot maps 401/403 to a
+`unsupported_audio_format`, 429 `rate_limited` (the gateway's own limit) or `stt_rate_limited` /
+`tts_rate_limited` (the provider's limit), 400 `audio_too_short` / `expected_json_text`,
+502 provider failure (retryable), 500 provider misconfiguration. A rate-limited *language model*
+is not an HTTP error: the reply is a kind "let's take a break" answer with
+`"source":"fallback"` and the code in `warnings`. The robot maps 401/403 to a
 sticky `auth_rejected` error (fix the token over USB), everything else to recoverable errors.

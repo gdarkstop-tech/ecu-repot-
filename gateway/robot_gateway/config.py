@@ -1,7 +1,11 @@
 """Gateway settings, read from environment variables (and an optional local .env file).
 
-Provider API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY) are read by the providers directly
-from the environment and are never logged, echoed, or returned by any endpoint.
+Provider API keys (GROQ_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY) are read by the providers
+directly from the environment and are never logged, echoed, or returned by any endpoint.
+
+Default providers: when LLM_PROVIDER / STT_PROVIDER are not set, Groq is used if GROQ_API_KEY
+exists (free plan available), otherwise the keyless demo (mock). Text-to-speech stays opt-in
+(TTS_PROVIDER=groq for the natural Orpheus voice) because Groq's free speech quota is small.
 """
 from __future__ import annotations
 
@@ -54,8 +58,19 @@ def _float(name: str, default: float) -> float:
 class Settings:
     # Providers: each one is swappable without touching the robot firmware.
     stt_provider: str = "mock"      # mock | groq | openai | openai_compatible
-    llm_provider: str = "mock"      # mock | anthropic | openai
-    tts_provider: str = "mock"      # mock | espeak | openai
+    llm_provider: str = "mock"      # mock | groq | anthropic | openai
+    tts_provider: str = "mock"      # mock | groq | espeak | openai
+
+    # Groq (one GROQ_API_KEY for speech recognition, the language model and the voice).
+    groq_llm_model: str = "openai/gpt-oss-120b"
+    groq_reasoning_effort: str = "low"   # GPT-OSS: low = fastest, fewest tokens (free-plan friendly)
+    llm_max_tokens: int = 1024           # reasoning + answer, for OpenAI-compatible chat models
+    llm_temperature: float = 0.6
+    groq_tts_model_en: str = "canopylabs/orpheus-v1-english"
+    groq_tts_model_ar: str = "canopylabs/orpheus-arabic-saudi"
+    groq_tts_voice_en: str = "hannah"
+    groq_tts_voice_ar: str = "lulwa"
+    groq_tts_max_chunks: int = 2         # pieces of <= 200 characters spoken per answer
 
     # Claude Haiku 5.5: the fast, low-cost Claude model, chosen for short conversational replies.
     anthropic_model: str = "claude-haiku-5-5"
@@ -100,10 +115,20 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         default_tts = "espeak" if shutil.which("espeak-ng") else "mock"
+        default_ai = "groq" if os.environ.get("GROQ_API_KEY") else "mock"
         return cls(
-            stt_provider=os.environ.get("STT_PROVIDER", "mock").lower(),
-            llm_provider=os.environ.get("LLM_PROVIDER", "mock").lower(),
-            tts_provider=os.environ.get("TTS_PROVIDER", default_tts).lower(),
+            stt_provider=(os.environ.get("STT_PROVIDER") or default_ai).strip().lower(),
+            llm_provider=(os.environ.get("LLM_PROVIDER") or default_ai).strip().lower(),
+            tts_provider=(os.environ.get("TTS_PROVIDER") or default_tts).strip().lower(),
+            groq_llm_model=os.environ.get("GROQ_LLM_MODEL") or "openai/gpt-oss-120b",
+            groq_reasoning_effort=os.environ.get("GROQ_REASONING_EFFORT", "low").strip().lower(),
+            llm_max_tokens=_int("LLM_MAX_TOKENS", 1024),
+            llm_temperature=_float("LLM_TEMPERATURE", 0.6),
+            groq_tts_model_en=os.environ.get("GROQ_TTS_MODEL_EN") or "canopylabs/orpheus-v1-english",
+            groq_tts_model_ar=os.environ.get("GROQ_TTS_MODEL_AR") or "canopylabs/orpheus-arabic-saudi",
+            groq_tts_voice_en=os.environ.get("GROQ_TTS_VOICE_EN") or "hannah",
+            groq_tts_voice_ar=os.environ.get("GROQ_TTS_VOICE_AR") or "lulwa",
+            groq_tts_max_chunks=_int("GROQ_TTS_MAX_CHUNKS", 2),
             anthropic_model=os.environ.get("ANTHROPIC_MODEL", "claude-haiku-5-5"),
             anthropic_effort=os.environ.get("ANTHROPIC_EFFORT", "low"),
             anthropic_fallbacks=_bool("ANTHROPIC_FALLBACKS", True),

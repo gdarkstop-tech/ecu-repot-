@@ -19,7 +19,7 @@ import logging
 import os
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
 from . import __version__
@@ -157,7 +157,11 @@ def create_app(settings: Settings | None = None, *, stt: SpeechToText | None = N
         try:
             return fn(*args)
         except ProviderError as exc:
-            raise HTTPException(502 if exc.retryable else 500, {"error": exc.code}) from exc
+            # 429 for a provider's rate limit (the robot shows a short "busy" error and recovers),
+            # 502 for other retryable failures, 500 for configuration problems.
+            status = 429 if exc.code.endswith("_rate_limited") else (502 if exc.retryable else 500)
+            log.warning("turn failed: status=%d code=%s", status, exc.code)
+            raise HTTPException(status, {"error": exc.code}) from exc
 
     def finish(dev: Device, session, mem: str, result) -> JSONResponse:
         if not result.body.get("ignore"):
@@ -173,6 +177,7 @@ def create_app(settings: Settings | None = None, *, stt: SpeechToText | None = N
     @app.get("/healthz")
     def health() -> JSONResponse:
         body = {"ok": not errors, "version": __version__, "stt": stt.name, "llm": llm.name, "tts": tts.name,
+                "llm_model": getattr(llm, "model", None), "tts_model": getattr(tts, "model", None),
                 "devices": len(registry), "stateless": stateless, "memory": memory.mode,
                 "context_key": key_source, "warnings": warnings, "errors": errors}
         return JSONResponse(body, status_code=200 if not errors else 503)
@@ -229,7 +234,11 @@ def create_app(settings: Settings | None = None, *, stt: SpeechToText | None = N
         if item is None:
             raise HTTPException(404, {"error": "not_found"})
         pcm, rate = item
-        return Response(pcm, media_type=f"audio/L16;rate={rate};channels=1", headers={"Cache-Control": "no-store"})
+        media = f"audio/L16;rate={rate};channels=1"
+        if isinstance(pcm, (bytes, bytearray)):
+            return Response(pcm, media_type=media, headers={"Cache-Control": "no-store"})
+        # Natural voice in pieces: stream each one as it is synthesised (chunked transfer encoding).
+        return StreamingResponse(pcm, media_type=media, headers={"Cache-Control": "no-store"})
 
     return app
 

@@ -1,8 +1,11 @@
 // HTTP body framing as served by different hosts (Content-Length, chunked, until-close),
 // fed in arbitrary pieces the way bytes arrive from a TLS socket.
+#include <stdio.h>
 #include <string.h>
 #include <unity.h>
 
+#include <fstream>
+#include <sstream>
 #include <string>
 
 #include "http_body.h"
@@ -104,6 +107,57 @@ void test_until_close_and_empty_length() {
   TEST_ASSERT_TRUE(e.complete());
 }
 
+static std::string readFixture(const char* name) {
+  const char* dirs[] = {"test/test_http_body/fixtures/", "fixtures/", "../test/test_http_body/fixtures/"};
+  for (const char* d : dirs) {
+    std::ifstream f(std::string(d) + name, std::ios::binary);
+    if (f) {
+      std::stringstream ss;
+      ss << f.rdbuf();
+      return ss.str();
+    }
+  }
+  TEST_FAIL_MESSAGE(name);
+  return "";
+}
+
+struct Pcm {
+  size_t bytes = 0;
+  uint32_t sum = 0;
+};
+
+static size_t countPcm(const uint8_t* p, size_t n, void* ctx) {
+  Pcm* o = static_cast<Pcm*>(ctx);
+  for (size_t i = 0; i < n; i++) o->sum += p[i];
+  o->bytes += n;
+  return n;
+}
+
+// The exact bytes a real uvicorn server sent for a streamed Groq Orpheus answer (two pieces,
+// mocked Groq API), captured by tools/gen_contract_fixtures.py, decoded by the robot's code.
+void test_streamed_groq_speech_from_the_gateway_decodes_exactly() {
+  std::string wire = readFixture("groq_tts_stream.bin");
+  std::string meta = readFixture("groq_tts_stream.json");
+  unsigned long expBytes = 0, expSum = 0, rate = 0;
+  TEST_ASSERT_EQUAL(3, sscanf(meta.c_str(), "{\"pcm_bytes\": %lu, \"byte_sum\": %lu, \"sample_rate\": %lu}",
+                              &expBytes, &expSum, &rate));
+  for (size_t step : {1460u, 333u, 4096u}) {  // arbitrary TCP segment sizes
+    HttpBodyDecoder d;
+    Pcm pcm;
+    d.beginChunked();
+    for (size_t i = 0; i < wire.size(); i += step) {
+      size_t n = wire.size() - i < step ? wire.size() - i : step;
+      TEST_ASSERT_TRUE(d.feed(reinterpret_cast<const uint8_t*>(wire.data() + i), n, countPcm, &pcm));
+    }
+    TEST_ASSERT_TRUE(d.complete());
+    TEST_ASSERT_EQUAL_UINT32(expBytes, pcm.bytes);
+    TEST_ASSERT_EQUAL_UINT32(expSum, pcm.sum);
+  }
+  TEST_ASSERT_EQUAL_UINT32(24000, rate);
+  TEST_ASSERT_EQUAL_UINT32(0, expBytes % 2);                       // whole 16-bit samples
+  TEST_ASSERT_TRUE(expBytes / 2 / rate >= 4 && expBytes / 2 / rate <= 15);  // a few seconds of speech
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_content_length_any_split);
@@ -112,5 +166,6 @@ int main() {
   RUN_TEST(test_chunked_malformed_is_rejected);
   RUN_TEST(test_sink_can_refuse_oversized_bodies);
   RUN_TEST(test_until_close_and_empty_length);
+  RUN_TEST(test_streamed_groq_speech_from_the_gateway_decodes_exactly);
   return UNITY_END();
 }

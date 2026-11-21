@@ -140,6 +140,7 @@ void SpeakerOutput::ampEnable(bool on) {
 bool SpeakerOutput::beginStream(uint32_t sampleRate) {
   if (!installed_) return false;
   stopReq_ = false;
+  streamFailed_ = false;
   pendingRate_ = sampleRate;
   streaming_ = true;
   return true;
@@ -150,7 +151,10 @@ size_t SpeakerOutput::write(const uint8_t* data, size_t bytes, uint32_t timeoutM
   return xStreamBufferSend(sb_, data, bytes, pdMS_TO_TICKS(timeoutMs));
 }
 
-void SpeakerOutput::endStream() { streaming_ = false; }
+void SpeakerOutput::endStream(bool delivered) {
+  streamFailed_ = !delivered;
+  streaming_ = false;
+}
 
 bool SpeakerOutput::active() const {
   if (!installed_) return false;

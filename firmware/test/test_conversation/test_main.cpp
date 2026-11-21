@@ -47,10 +47,12 @@ struct FakeGateway : IGateway {
 
 struct FakeAudio : IAudioOutput {
   bool playing = false;
+  bool failed = false;
   int stops = 0;
   bool active() const override { return playing; }
   uint8_t level() const override { return playing ? 60 : 0; }
   void stop() override { playing = false; stops++; }
+  bool lastStreamFailed() const override { return failed; }
 };
 
 static int16_t store[16000 * 12];
@@ -258,6 +260,61 @@ void test_missing_audio_does_not_hang() {
   TEST_ASSERT_NOT_EQUAL((int)RobotState::Speaking, (int)r.state());
 }
 
+void test_failed_speech_shows_the_whole_answer_as_text() {
+  // Speaker robot; the gateway's voice service is rate-limited, so the audio fetch fails.
+  Rig r;
+  r.robot.setMuted(false, r.t);
+  r.conv.submitText("why is the sky blue", "en", r.t);
+  const char* answer = "Air scatters blue sunlight the most, so the sky looks blue.";
+  snprintf(r.gw.reply.longText, sizeof(r.gw.reply.longText), "%s", answer);
+  snprintf(r.gw.reply.oledText, sizeof(r.gw.reply.oledText), "%s", "Air scatters blue light");
+  r.gw.reply.hasAudio = true;
+  r.gw.next = GatewayPoll::Reply;
+  r.audio.playing = true;  // the stream opens...
+  r.run(false, 5);
+  TEST_ASSERT_EQUAL_STRING("", r.robot.view(r.t).readingText);  // speaking normally so far
+  r.audio.playing = false;  // ...and closes without any audio (HTTP 429)
+  r.audio.failed = true;
+  r.run(false, 2);
+  TEST_ASSERT_TRUE(r.p.saw("audio_failed"));
+  TEST_ASSERT_EQUAL((int)RobotState::Speaking, (int)r.state());
+  TEST_ASSERT_EQUAL_STRING(answer, r.robot.view(r.t).readingText);  // the answer is shown instead
+  r.run(false, (int)((1200 + readingTimeMs(answer, false)) / 20) - 10);
+  TEST_ASSERT_EQUAL((int)RobotState::Speaking, (int)r.state());      // paced for reading
+  r.run(false, 40);
+  TEST_ASSERT_EQUAL((int)RobotState::Listening, (int)r.state());     // then listens again
+}
+
+void test_speech_that_never_starts_also_falls_back_to_text() {
+  Rig r;
+  r.robot.setMuted(false, r.t);
+  r.conv.submitText("hi", "en", r.t);
+  snprintf(r.gw.reply.longText, sizeof(r.gw.reply.longText), "%s", "Hello! Nice to meet you.");
+  r.gw.reply.hasAudio = true;
+  r.gw.next = GatewayPoll::Reply;
+  r.run(false, 90);  // > playbackStartGraceMs
+  TEST_ASSERT_TRUE(r.p.saw("audio_missing"));
+  TEST_ASSERT_EQUAL_STRING("Hello! Nice to meet you.", r.robot.view(r.t).readingText);
+}
+
+void test_successful_speech_does_not_show_reading_text() {
+  Rig r;
+  r.robot.setMuted(false, r.t);
+  r.conv.submitText("hi", "en", r.t);
+  snprintf(r.gw.reply.longText, sizeof(r.gw.reply.longText), "%s", "Hello! Nice to meet you.");
+  r.gw.reply.hasAudio = true;
+  r.gw.next = GatewayPoll::Reply;
+  r.audio.playing = true;
+  r.run(false, 50);
+  r.audio.playing = false;  // played and drained normally
+  r.run(false, 3);
+  TEST_ASSERT_EQUAL((int)Conversation::Phase::Tail, (int)r.conv.phase());  // done speaking at once
+  TEST_ASSERT_FALSE(r.p.saw("audio_failed"));
+  TEST_ASSERT_EQUAL_STRING("", r.robot.view(r.t).readingText);
+  r.run(false, 30);
+  TEST_ASSERT_EQUAL((int)RobotState::Listening, (int)r.state());
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_muted_robot_never_listens_or_submits);
@@ -271,5 +328,8 @@ int main() {
   RUN_TEST(test_reply_with_content_shows_learning_card);
   RUN_TEST(test_text_only_reply_happy_then_paced_reading_then_listens);
   RUN_TEST(test_missing_audio_does_not_hang);
+  RUN_TEST(test_failed_speech_shows_the_whole_answer_as_text);
+  RUN_TEST(test_speech_that_never_starts_also_falls_back_to_text);
+  RUN_TEST(test_successful_speech_does_not_show_reading_text);
   return UNITY_END();
 }

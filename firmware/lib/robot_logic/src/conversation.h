@@ -57,6 +57,9 @@ class IAudioOutput {
   virtual bool active() const = 0;    // audio still arriving or still playing
   virtual uint8_t level() const = 0;  // 0..100 playback envelope (drives the mouth)
   virtual void stop() = 0;
+  // True when the last reply's speech could not be fetched at all (e.g. the voice service's
+  // rate limit): the conversation then shows the answer as text instead.
+  virtual bool lastStreamFailed() const { return false; }
 };
 
 struct ConversationConfig {
@@ -99,6 +102,7 @@ class Conversation {
  private:
   void onSpeechEnd(uint32_t now);
   void finishSpeaking(uint32_t now);
+  void startReading(uint32_t now);
   void rearm(uint32_t now);
   void emitTurnEvent(const char* stage, const char* detail = nullptr);
 

@@ -101,6 +101,22 @@ reboot starts a new conversation. Considered and rejected for now: Vercel-Market
 extra account and setup for a beginner, free tiers vary) and returning audio inline in the JSON
 (the robot's 12 KB reply buffer).
 
+**ADR-12 — Groq as the default AI provider; natural voice from Groq Orpheus.** Anthropic API
+use needs prepaid credits, which stopped real conversations. Groq offers a free plan and one key
+covers Whisper (already used), the language model and speech, so the default is now
+`openai/gpt-oss-120b` (configurable `GROQ_LLM_MODEL`; `reasoning_effort=low`,
+`include_reasoning=false` so only the answer returns) and, optionally, Orpheus for the voice.
+Claude stays a configuration choice (`LLM_PROVIDER=anthropic`). Orpheus accepts ≤ 200 characters
+per request and the free plan allows ~100 speech requests a day, so the gateway splits speech at
+sentence boundaries, speaks at most `GROQ_TTS_MAX_CHUNKS` (2) pieces per answer, converts the
+WAV to 24 kHz s16le mono (resampling only on a mismatch), limits peaks to −1 dBFS, and streams
+piece by piece (first-piece errors become the HTTP status, later ones end the audio early).
+Free-plan limits are respected, not fought: at most one retry when Groq asks for a ≤ 2 s pause;
+otherwise a rate-limited model gives a kind "break" answer, a rate-limited voice returns 429 and
+firmware ≥ 0.4.0 shows the whole answer as text. The gateway never upgrades a plan or switches to
+a paid provider by itself. Provider failures are logged with provider, model, status and the
+provider's error type/code only (no key, no child text, no provider free-text message).
+
 ## Security and privacy
 
 - **No cloud keys on the robot.** Device token stored in NVS; write-only over USB; never printed.

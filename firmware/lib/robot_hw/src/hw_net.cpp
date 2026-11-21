@@ -12,7 +12,7 @@
 #include "utf8.h"
 
 #ifndef ROBOT_FW_VERSION
-#define ROBOT_FW_VERSION "0.3.0"
+#define ROBOT_FW_VERSION "0.4.0"
 #endif
 
 namespace robot {
@@ -131,6 +131,7 @@ size_t toBuffer(const uint8_t* p, size_t n, void* ctx) {
 struct SpeakerSink {
   SpeakerOutput* spk;
   volatile bool* cancel;
+  size_t written;
 };
 
 size_t toSpeaker(const uint8_t* p, size_t n, void* ctx) {
@@ -138,7 +139,9 @@ size_t toSpeaker(const uint8_t* p, size_t n, void* ctx) {
   size_t off = 0;
   while (off < n) {
     if (*s->cancel || s->spk->stopRequested()) return off;  // short write ends the stream
-    off += s->spk->write(p + off, n - off, 1000);           // blocks while the buffer is full
+    size_t w = s->spk->write(p + off, n - off, 1000);       // blocks while the buffer is full
+    off += w;
+    s->written += w;
   }
   return n;
 }
@@ -395,22 +398,23 @@ void GatewayClient::execute() {
   ah.setConnectTimeout(8000);
   ah.setTimeout(15000);
   if (!ah.begin(*client, String(s_->gatewayUrl) + audioPath_)) {
-    spk_->endStream();
+    spk_->endStream(false);
     return;
   }
   ah.collectHeaders(kResponseHeaders, 1);
   ah.addHeader("Authorization", auth);
   int ac = ah.GET();
   if (ac != 200) {
-    log("warn", "gateway: audio http %d", ac);
+    // 429 = the voice service's rate limit: the conversation shows the answer as text instead.
+    log("warn", "gateway: audio http %d%s", ac, ac == 429 ? " (voice rate limit)" : "");
     ah.end();
-    spk_->endStream();
+    spk_->endStream(false);
     return;
   }
-  SpeakerSink speaker{spk_, &cancel_};
+  SpeakerSink speaker{spk_, &cancel_, 0};
   if (!readBody(ah, toSpeaker, &speaker, cancel_)) log("warn", "gateway: audio stream ended early");
   ah.end();
-  spk_->endStream();
+  spk_->endStream(speaker.written > 0 || cancel_);
 }
 
 }  // namespace robot

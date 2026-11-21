@@ -63,7 +63,7 @@ struct SimPlatform : IRobotPlatform {
     fflush(stdout);
   }
   void getInfo(DeviceInfo& i) override {
-    i.fw = "sim-0.3.0";
+    i.fw = "sim-0.4.0";
     i.board = "host-simulator";
     i.oledOk = true;
     i.oledAddr = 0x3C;

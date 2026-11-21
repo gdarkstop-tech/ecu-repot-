@@ -57,7 +57,7 @@ class SpeakerOutput : public IAudioOutput {
   // Streaming API used by the gateway client (network task).
   bool beginStream(uint32_t sampleRate);
   size_t write(const uint8_t* pcm16le, size_t bytes, uint32_t timeoutMs);
-  void endStream();
+  void endStream(bool delivered = true);  // false: no audio could be fetched for this reply
 
   void playTone(uint32_t hz, uint32_t ms);
   void setVolume(uint8_t v) { volume_ = v > 100 ? 100 : v; }
@@ -66,6 +66,7 @@ class SpeakerOutput : public IAudioOutput {
   bool active() const override;
   uint8_t level() const override { return level_; }
   void stop() override;
+  bool lastStreamFailed() const override { return streamFailed_; }
 
   bool stopRequested() const { return stopReq_; }
   uint32_t underruns() const { return underruns_; }
@@ -80,6 +81,7 @@ class SpeakerOutput : public IAudioOutput {
   uint8_t* sbStorage_ = nullptr;
   bool installed_ = false;
   volatile bool streaming_ = false;
+  volatile bool streamFailed_ = false;
   volatile bool playing_ = false;
   volatile bool stopReq_ = false;
   volatile uint8_t level_ = 0;

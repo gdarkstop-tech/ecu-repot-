@@ -1,5 +1,12 @@
 # Talking to Claude — setup guide (microphone + Wi-Fi, answers on the OLED)
 
+> **Default since gateway 0.4.0: Groq (free plan), not Claude.** With `LLM_PROVIDER=groq` the
+> answers come from Groq `openai/gpt-oss-120b` using the same `GROQ_API_KEY` as speech
+> recognition — see [VERCEL_SETUP.md](VERCEL_SETUP.md) (Part G switches an existing deployment).
+> Claude remains a supported option: it needs an Anthropic API key **with prepaid credits**
+> (an empty balance shows up in the gateway log as `llm_billing_required`). The rest of this
+> guide describes the Claude option.
+
 This connects your robot to Claude so a child can ask a question out loud (Arabic or English)
 and read the answer on the OLED. **No speaker is needed** — the robot runs in text-only mode until
 you set `speaker on`. After setup the laptop can be switched off.
