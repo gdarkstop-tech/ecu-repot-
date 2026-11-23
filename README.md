@@ -17,10 +17,14 @@ import settings, environment variables, `/healthz` check (beginner steps).
 
 Code: https://github.com/gdarkstop-tech/ecu-repot- · branch `claude/vigilant-gauss-lvs43y`
 
-![OLED gallery rendered by the firmware's own drawing code](docs/media/oled_gallery.png)
+**The face is BMO-inspired** (light screen, dark dot eyes, simple mouth; 20 faces, all
+monochrome): [docs/FACE_DESIGN.md](docs/FACE_DESIGN.md)
+
+![BMO-inspired faces rendered by the firmware's own drawing code](docs/media/faces.png)
 
 *Frames above are rendered on a PC by the firmware's renderer through the real U8g2 library
-(`firmware/sim`). They are not photos of the physical display.*
+(`firmware/sim`). They are not photos of the physical display. All screens, including learning
+cards: [docs/media/oled_gallery.png](docs/media/oled_gallery.png).*
 
 ## Status
 
@@ -165,13 +169,19 @@ stored in the robot's flash, and never printed back. Then check with `--skip-fla
 
 ## 6. Using the robot
 
-- **Power on** → boot animation → **muted** (mic off, mic-with-slash face).
+- **Power on** → boot animation → **muted** (zipped-mouth face with a mic-off icon).
 - **Short press** the button → unmuted: the robot listens hands-free. Speak; it shows LISTENING
-  (bars follow your voice), THINKING (looks up, dots), then SPEAKING (mouth follows the audio, subtitle
-  scrolls), then listens again for 8 s before going idle. After 3 minutes idle it sleeps (still wakes on speech).
+  (sound waves follow your voice), THINKING (looks up, thought bubbles), then SPEAKING (the mouth
+  follows the voice; with a speaker no text is shown), then listens again for 8 s before going
+  idle. After 3 minutes idle it sleeps on a dark screen (still wakes on speech).
 - **Short press** again → muted. Muting stops the microphone hardware, not just the software.
 - Say "let's learn the alphabet", "count with me", "math", "quiz", "tell me a story", "English
   words", "Arabic words", "a life lesson" — or the Arabic equivalents ("علمني الحروف", "قصة", …).
+- **Practice goes in order and waits until it is right** (alphabet, counting, words): a wrong
+  answer gets "No, that's not it — listen: G is for Grapes" and the same item again; an answer
+  from elsewhere in the order gets "Yes, Elephant is for E! But let's go in order"; "I don't
+  know" gets the answer to repeat. Only the right answer moves on (proud face; every 5th in a
+  row, excited). Math and quiz still show the answer after two tries.
 - **No Wi-Fi / gateway down** → offline mode: letter, number and sum cards on the OLED; speaking
   advances the card; **long press** switches activity. The Wi-Fi-off icon shows in the corner.
 

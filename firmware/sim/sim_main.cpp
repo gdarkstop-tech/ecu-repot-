@@ -63,7 +63,7 @@ struct SimPlatform : IRobotPlatform {
     fflush(stdout);
   }
   void getInfo(DeviceInfo& i) override {
-    i.fw = "sim-0.4.0";
+    i.fw = "sim-0.5.0";
     i.board = "host-simulator";
     i.oledOk = true;
     i.oledAddr = 0x3C;
@@ -113,6 +113,13 @@ void runGallery(const char* dir) {
        {std::string("{\"cmd\":\"say\",\"rtl\":true,\"ms\":9000,\"text\":\"") + arMath + "\"}"}, 4000, true, 0, false, false, 0},
       {"surprised", {"{\"cmd\":\"face\",\"expr\":\"surprised\",\"ms\":9000}"}, 2000, true, 0, false, false, 0},
       {"sad", {"{\"cmd\":\"face\",\"expr\":\"sad\",\"ms\":9000}"}, 2000, true, 0, false, false, 0},
+      {"excited", {"{\"cmd\":\"face\",\"expr\":\"excited\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
+      {"curious", {"{\"cmd\":\"face\",\"expr\":\"curious\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
+      {"confused", {"{\"cmd\":\"face\",\"expr\":\"confused\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
+      {"worried", {"{\"cmd\":\"face\",\"expr\":\"worried\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
+      {"playful", {"{\"cmd\":\"face\",\"expr\":\"playful\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
+      {"proud", {"{\"cmd\":\"face\",\"expr\":\"proud\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
+      {"sleepy", {"{\"cmd\":\"face\",\"expr\":\"sleepy\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
       {"sleeping", {}, 4000, true, 0, false, false, 200000},
       {"muted", {}, 2500, false, 0, false, false, 0},
       {"error", {}, 2500, true, 0, false, false, 0},

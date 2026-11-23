@@ -207,8 +207,36 @@ void test_sleeping_face_after_inactivity_and_wake_on_command() {
   TEST_ASSERT_EQUAL((int)Expression::Muted, (int)r.view(10005).expression);
 }
 
+void test_offline_face_when_resting_without_wifi_and_new_faces_in_selftest() {
+  FakePlatform p;
+  Robot r(p, cfg());
+  r.begin(0);
+  r.tick(3000);
+  r.setMuted(false, 3000);
+  r.setLinkStatus(true, false, false);  // Wi-Fi configured but down
+  TEST_ASSERT_EQUAL((int)Expression::Offline, (int)r.view(3100).expression);
+  r.setLinkStatus(true, true, true);
+  TEST_ASSERT_EQUAL((int)Expression::Idle, (int)r.view(3200).expression);
+  send(r, "{\"cmd\":\"face\",\"expr\":\"playful\"}", 3300);
+  TEST_ASSERT_EQUAL((int)Expression::Playful, (int)r.view(3400).expression);
+  send(r, "{\"cmd\":\"selftest\"}", 4000);
+  uint32_t t = 4000;
+  for (int i = 0; i < 3000 && !p.saw("\"done\":true"); i++) {
+    t += 50;
+    r.tick(t);
+    r.view(t);
+  }
+  const char* names[] = {"excited", "curious", "confused", "worried", "playful", "proud", "sleepy", "offline"};
+  for (const char* n : names) {
+    char needle[40];
+    snprintf(needle, sizeof(needle), "\"name\":\"%s\"", n);
+    TEST_ASSERT_TRUE_MESSAGE(p.saw(needle), n);
+  }
+}
+
 int main() {
   UNITY_BEGIN();
+  RUN_TEST(test_offline_face_when_resting_without_wifi_and_new_faces_in_selftest);
   RUN_TEST(test_hello_on_begin_and_muted_after_startup);
   RUN_TEST(test_bad_line_gets_nack_with_id);
   RUN_TEST(test_face_override_expires);

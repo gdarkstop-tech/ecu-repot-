@@ -117,6 +117,18 @@ firmware ≥ 0.4.0 shows the whole answer as text. The gateway never upgrades a 
 a paid provider by itself. Provider failures are logged with provider, model, status and the
 provider's error type/code only (no key, no child text, no provider free-text message).
 
+**ADR-13 — A display-independent face model, painted in BMO style.** The robot is dressed as
+BMO, so the OLED is BMO's screen: dark dot eyes and a simple mouth on a lit screen (the mono
+buffer is inverted at the end of each frame; sleeping switches to a dark screen). Expressions are
+data — `FacePose` (eye kinds, mouth kind, marks, offsets) produced by a deterministic
+`FaceAnimator` (seeded blink schedule, fixed small gaze pattern, eased posture, quantised talking
+mouth, expression changes behind a blink) — in `robot_logic`, unit-tested on the host. The
+U8g2 painter maps semantic colour roles (Screen / Feature / Accent) to lit, dark and dithered
+pixels, so a colour display later needs only a new painter. With a speaker the face does the
+talking: no subtitles or long text (Arabic presentation forms render poorly at 16 px); a failed
+voice shows a worried face and a short English label. Drawings are original geometry, not
+copied artwork.
+
 ## Security and privacy
 
 - **No cloud keys on the robot.** Device token stored in NVS; write-only over USB; never printed.

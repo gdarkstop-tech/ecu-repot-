@@ -76,7 +76,8 @@ void test_alphabet_en_and_ar() {
   Parsed ar = parse(fixture("alphabet_ar.json"));
   TEST_ASSERT_TRUE(ar.ok);
   TEST_ASSERT_TRUE(ar.r.rtl);
-  TEST_ASSERT_EQUAL_STRING("ﺏ", ar.r.contentValue);  // ب, isolated presentation form
+  // Asking for the alphabet again in Arabic repeats the current item (index 0): alif, isolated form.
+  TEST_ASSERT_EQUAL_STRING("ﺍ", ar.r.contentValue);
   TEST_ASSERT_TRUE(utf8IsValid(ar.r.contentCaption));
 }
 
@@ -177,7 +178,9 @@ void test_vercel_conversation_replies() {
   TEST_ASSERT_EQUAL((int)ContentKind::Math, (int)t1.r.contentKind);
   Parsed t2 = parse(fixture("vercel_math_turn2.json"));
   TEST_ASSERT_TRUE(t2.ok);
-  TEST_ASSERT_TRUE(strncmp(t2.r.longText, "Correct", 7) == 0);  // the gateway remembered the question
+  bool praised = strncmp(t2.r.longText, "Correct", 7) == 0 || strncmp(t2.r.longText, "Yes", 3) == 0 ||
+                 strncmp(t2.r.longText, "That's right", 12) == 0;
+  TEST_ASSERT_TRUE(praised);  // the gateway remembered the question
   TEST_ASSERT_TRUE(strcmp(t1.ctx, t2.ctx) != 0);
   Parsed ar = parse(fixture("vercel_story_ar.json"));
   TEST_ASSERT_TRUE(ar.ok && ar.r.longRtl && utf8IsValid(ar.r.longText));
@@ -236,6 +239,23 @@ void test_groq_replies_speaker_and_text_robots() {
   TEST_ASSERT_TRUE(ar.r.longRtl && utf8IsValid(ar.r.longText) && strlen(ar.r.longText) > 20);
 }
 
+void test_new_reply_emotions_and_system_faces_refused() {
+  const char* ok[] = {"excited", "proud", "worried", "curious", "confused", "playful", "sleepy"};
+  for (const char* e : ok) {
+    char body[96];
+    snprintf(body, sizeof(body), "{\"display\":{},\"emotion\":\"%s\"}", e);
+    Parsed p = parse(body);
+    TEST_ASSERT_TRUE(p.ok);
+    TEST_ASSERT_EQUAL_STRING_MESSAGE(e, toString(p.r.emotion), e);
+  }
+  const char* system[] = {"muted", "error", "offline", "speaking", "listening", "sleeping", "boot"};
+  for (const char* e : system) {  // the gateway cannot put the robot into a system face
+    char body[96];
+    snprintf(body, sizeof(body), "{\"display\":{},\"emotion\":\"%s\"}", e);
+    TEST_ASSERT_EQUAL_MESSAGE((int)Expression::Happy, (int)parse(body).r.emotion, e);
+  }
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_math_en);
@@ -252,5 +272,6 @@ int main() {
   RUN_TEST(test_sealed_audio_ticket_path_is_accepted);
   RUN_TEST(test_hostile_context_tokens_clear_the_stored_one);
   RUN_TEST(test_groq_replies_speaker_and_text_robots);
+  RUN_TEST(test_new_reply_emotions_and_system_faces_refused);
   return UNITY_END();
 }

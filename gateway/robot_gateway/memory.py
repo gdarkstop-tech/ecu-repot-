@@ -64,6 +64,7 @@ def session_to_state(s: Session) -> dict:
         "at": p.attempts,
         "ng": p.nudged,
         "c": _content_to(p.content_answer),
+        "dr": p.drill,
     }
     return {"m": s.mode, "i": s.index, "lv": s.level, "st": s.streak, "mi": s.misses,
             "qa": s.quiz_asked, "qc": s.quiz_correct, "p": pending}
@@ -90,6 +91,7 @@ def session_from_state(device_id: str, st: dict, history: list) -> Session:
             attempts=_int(p.get("at"), 0, 100),
             nudged=bool(p.get("ng")),
             content_answer=_content_from(p.get("c")),
+            drill=p.get("dr", "") if p.get("dr", "") in ("", "say", "count") else "",
         )
     if not isinstance(history, list):
         raise ValueError("bad history")

@@ -31,9 +31,17 @@ bool isSafeContextToken(const char* t, size_t cap) {
   return true;
 }
 
+// Moods a reply may ask for. System faces (speaking, listening, muted, error, offline...) are
+// decided by the robot itself, never by the gateway.
 static bool allowedEmotion(Expression e) {
-  return e == Expression::Happy || e == Expression::Sad || e == Expression::Surprised || e == Expression::Idle ||
-         e == Expression::Thinking;
+  switch (e) {
+    case Expression::Happy: case Expression::Sad: case Expression::Surprised: case Expression::Idle:
+    case Expression::Thinking: case Expression::Excited: case Expression::Proud: case Expression::Worried:
+    case Expression::Curious: case Expression::Confused: case Expression::Playful: case Expression::Sleepy:
+      return true;
+    default:
+      return false;
+  }
 }
 
 bool parseGatewayReply(const char* body, size_t len, GatewayReply& out, char* audioPath, size_t pathCap,

@@ -69,6 +69,11 @@ struct ConversationConfig {
   uint32_t learningHoldMs = 20000;  // how long reply content (e.g. a letter) stays up
   uint32_t emotionMs = 1800;        // reply emotion shown after speaking
   uint32_t textIntroMs = 1200;      // happy face before the answer text starts scrolling
+  // Robot WITHOUT a speaker: answers scroll as full text, subtitles accompany speech.
+  // Robot WITH a speaker (BMO style): the face does the talking — no long text, no subtitles;
+  // if the voice fails, a worried face and a short English label (Arabic text is not shown).
+  bool longTextAnswers = true;
+  bool subtitles = true;
 };
 
 class Conversation {
@@ -77,6 +82,12 @@ class Conversation {
 
   Conversation(Robot& robot, Vad& vad, UtteranceBuffer& buffer, IGateway& gateway, IAudioOutput& audio,
                const ConversationConfig& cfg = ConversationConfig());
+
+  // true for a robot without a speaker (full text answers), false for the speaking BMO face.
+  void setTextAnswers(bool on) {
+    cfg_.longTextAnswers = on;
+    cfg_.subtitles = on;
+  }
 
   // Feed every captured 20 ms frame (16 kHz mono). Frames are ignored while the mic must be deaf.
   void onMicFrame(const int16_t* pcm, size_t n, uint32_t now);
@@ -103,6 +114,8 @@ class Conversation {
   void onSpeechEnd(uint32_t now);
   void finishSpeaking(uint32_t now);
   void startReading(uint32_t now);
+  bool showWithoutSpeech(uint32_t now);
+  void showShortAnswer(uint32_t now);
   void rearm(uint32_t now);
   void emitTurnEvent(const char* stage, const char* detail = nullptr);
 

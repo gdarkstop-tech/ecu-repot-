@@ -8,8 +8,9 @@ namespace robot {
 namespace {
 const char* const kStateNames[] = {"STARTUP",  "IDLE",     "LISTENING", "PROCESSING",
                                    "SPEAKING", "LEARNING", "MUTED",     "ERROR"};
-const char* const kExprNames[] = {"idle",  "happy",     "listening", "thinking", "speaking", "blink",
-                                  "sleeping", "surprised", "sad",    "muted",    "error",    "boot"};
+const char* const kExprNames[] = {"idle",    "happy",   "listening", "thinking", "speaking", "blink",   "sleeping",
+                                  "surprised", "sad",   "muted",     "error",    "excited",  "curious", "confused",
+                                  "worried", "playful", "proud",     "offline",  "sleepy",   "boot"};
 const char* const kKindNames[] = {"none", "letter", "number", "math", "word"};
 
 static_assert(sizeof(kStateNames) / sizeof(kStateNames[0]) == (size_t)RobotState::kCount, "state names");

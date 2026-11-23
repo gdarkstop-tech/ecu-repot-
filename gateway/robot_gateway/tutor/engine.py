@@ -41,6 +41,9 @@ class Pending:
     attempts: int = 0
     nudged: bool = False
     content_answer: Content | None = None
+    # Practice drills never move on until the child gets it right:
+    #   "say"   repeat-after-me (alphabet, vocabulary), "count" say the next number.
+    drill: str = ""
 
 
 @dataclass
@@ -110,6 +113,9 @@ class Tutor:
                      "لا أستطيع أن أرى الآن، فالكاميرا غير موصولة بعد. قريبا سأتعلم أن أرى الأشياء معك!"),
                 lang, emotion="sad", oled=_say(lang, "Camera not connected yet", "الكاميرا غير موصولة بعد"),
             )
+        if mode and mode == s.mode and s.pending is not None and s.pending.drill:
+            # "Letters again!" during practice: repeat the current item (in this language), no penalty.
+            return self.present(s, lang, age)
         if mode and mode != s.mode or (mode and mode in ("story", "wisdom", "quiz")):
             return self.start_mode(s, mode, lang, age)
 
@@ -120,14 +126,11 @@ class Tutor:
         if ev is not None:
             return self.math_answer(ev, lang)
 
-        if s.mode in ("alphabet", "vocab_en", "vocab_ar", "story", "wisdom") and (
-            s.mode in ("alphabet", "vocab_en", "vocab_ar") or any(w in text.lower() for w in NEXT_WORDS)
-        ):
-            praise = _say(lang, "Great! ", "رائع! ") if s.mode in ("alphabet", "vocab_en", "vocab_ar") else ""
+        if s.mode in ("alphabet", "vocab_en", "vocab_ar", "counting"):
+            return self.present(s, lang, age)  # a drill without a pending item (e.g. language switch)
+        if s.mode in ("story", "wisdom") and any(w in text.lower() for w in NEXT_WORDS):
             s.index += 1
-            r = self.present(s, lang, age)
-            r.text = praise + r.text
-            return r
+            return self.present(s, lang, age)
         return None
 
     # ------------------------------------------------------------------ modes
@@ -150,16 +153,23 @@ class Tutor:
         if s.mode == "alphabet":
             if lang == "ar":
                 letter, name, word, _ = C.AR_ALPHABET[s.index % len(C.AR_ALPHABET)]
+                s.pending = Pending(accepted={word}, answer_text=word, drill="say")
                 return TutorReply(f"هذا حرف ال{name}. {letter} مثل {word}. قل معي: {word}!", lang,
-                                  oled=f"{letter} مثل {word}", content=Content("letter", letter, word))
+                                  emotion="happy", oled=f"{letter} مثل {word}", content=Content("letter", letter, word))
             letter, word = C.EN_ALPHABET[s.index % len(C.EN_ALPHABET)]
+            s.pending = Pending(accepted={word}, answer_text=word, drill="say")
             return TutorReply(f"This is the letter {letter}. {letter} is for {word}. Can you say {word}?",
-                              lang, oled=f"{letter} is for {word}", content=Content("letter", letter, word))
+                              lang, emotion="happy", oled=f"{letter} is for {word}",
+                              content=Content("letter", letter, word))
         if s.mode == "counting":
-            start = 1 if s.level == 0 else s.rng.randint(1, 20 if s.level == 1 else 90)
+            # Counting continues in order from the number the child last said (s.index).
+            if s.index <= 0 or s.index > 96:
+                start = 1 if s.level == 0 else s.rng.randint(1, 20 if s.level == 1 else 90)
+            else:
+                start = s.index + 1
             seq = list(range(start, start + 3))
             nxt = seq[-1] + 1
-            s.pending = Pending(expected_number=Fraction(nxt), answer_text=str(nxt),
+            s.pending = Pending(expected_number=Fraction(nxt), answer_text=str(nxt), drill="count",
                                 content_answer=Content("number", str(nxt), C.number_word_en(nxt) if nxt <= 100 else ""))
             words = ", ".join(str(n) for n in seq)
             return TutorReply(_say(lang, f"Let's count together! {words}. What number comes next?",
@@ -171,11 +181,13 @@ class Tutor:
             en, ar = C.VOCAB[s.index % len(C.VOCAB)]
             text = _say(lang, f"Our English word is: {en}. Can you say {en}?",
                         f"الكلمة الإنجليزية هي {en}، ومعناها {ar}. قل معي: {en}!")
+            s.pending = Pending(accepted={en, ar}, answer_text=en, drill="say")  # the word or its meaning
             return TutorReply(text, lang, oled=f"{en} = {ar}", content=Content("word", en.upper(), ar))
         if s.mode == "vocab_ar":
             en, ar = C.VOCAB[s.index % len(C.VOCAB)]
             text = _say(lang, f"In Arabic, {en} is {ar}. Can you say {ar}?",
                         f"كلمتنا اليوم هي {ar}. قل معي: {ar}!")
+            s.pending = Pending(accepted={ar}, answer_text=ar, drill="say")
             return TutorReply(text, lang, oled=f"{ar} = {en}", content=Content("word", ar, en))
         if s.mode == "quiz":
             return self.ask_quiz(s, lang)
@@ -254,6 +266,8 @@ class Tutor:
     def check_answer(self, s: Session, text: str, lang: str) -> TutorReply:
         p = s.pending
         assert p is not None
+        if p.drill:
+            return self.check_drill(s, text, lang)
         correct = False
         gave_up = any(w in text.lower() for w in DONT_KNOW)
         if p.expected_number is not None:
@@ -302,6 +316,114 @@ class Tutor:
         if shown is not None and nxt.content is None:
             nxt.content = shown
         return nxt
+
+    # ------------------------------------------------------------------ practice drills
+    def check_drill(self, s: Session, text: str, lang: str) -> TutorReply:
+        """Alphabet, counting and vocabulary: never move on until the child says it right.
+        An answer from another place in the order is acknowledged, then the child is asked to go
+        in order. "I don't know" gets the answer and the same item again."""
+        p = s.pending
+        gave_up = any(w in text.lower() for w in DONT_KNOW)
+        card = self._card(s, lang)
+        if p.drill == "count":
+            n = extract_number(text)
+            expected = p.expected_number
+            prev = format_number(expected - 1)
+            if n is not None and n == expected:
+                s.index = int(expected)
+                return self._drill_correct(s, lang)
+            p.attempts += 1
+            if n is not None and n > expected:
+                a, b, c = (format_number(expected - k) for k in (3, 2, 1))
+                return TutorReply(_say(lang, f"{format_number(n)} comes later! Let's count in order: {a}, {b}, {c}, "
+                                             "and then?", f"{format_number(n)} يأتي لاحقا! لنعد بالترتيب: {a}، {b}، {c}، ثم؟"),
+                                  lang, emotion="playful", content=card)
+            if n is not None:
+                return TutorReply(self._encourage(p, lang, _say(lang, f"No, not {format_number(n)}. Try again! "
+                                                                      f"What comes after {prev}?",
+                                                                f"لا، ليس {format_number(n)}. حاول مرة أخرى! ما الرقم بعد {prev}؟")),
+                                  lang, emotion="worried", content=card)
+            if gave_up:
+                ans = format_number(expected)
+                return TutorReply(_say(lang, f"It's {ans}! Can you say {ans}?", f"إنه {ans}! قل: {ans}!"), lang,
+                                  emotion="curious", content=card)
+            return TutorReply(_say(lang, f"Tell me a number! What comes after {prev}?", f"قل لي رقما! ما الرقم بعد {prev}؟"),
+                              lang, emotion="confused", content=card)
+
+        if contains_answer(text, p.accepted):
+            s.index += 1
+            return self._drill_correct(s, lang)
+        p.attempts += 1
+        word = p.answer_text
+        if gave_up:
+            return TutorReply(_say(lang, f"It's {word}! Can you say {word}?", f"إنها {word}! قل: {word}!"), lang,
+                              emotion="curious", content=card)
+        other = self._out_of_order(s, text, lang)
+        if s.mode == "alphabet":
+            if lang == "ar":
+                letter, name, _, _ = C.AR_ALPHABET[s.index % len(C.AR_ALPHABET)]
+                again = f"هذا حرف ال{name}. {letter} مثل {word}. قل: {word}!"
+            else:
+                letter = C.EN_ALPHABET[s.index % len(C.EN_ALPHABET)][0]
+                again = f"This is {letter}. {letter} is for {word}. Can you say {word}?"
+            if other:
+                o_letter, o_word = other
+                return TutorReply(_say(lang, f"Yes, {o_word} is for {o_letter}! But let's go in order. {again}",
+                                       f"صحيح، {o_word} تبدأ بحرف {o_letter}! لكن لنمش بالترتيب. {again}"),
+                                  lang, emotion="playful", content=card)
+            return TutorReply(self._encourage(p, lang, _say(lang, f"No, that's not it. Listen! {again}",
+                                                            f"لا، ليست هذه. اسمع! {again}")),
+                              lang, emotion="worried", content=card)
+        if other:
+            return TutorReply(_say(lang, f"Yes, that's another word we learn! But let's go in order. Can you say {word}?",
+                                   f"صحيح، هذه كلمة أخرى نتعلمها! لكن لنمش بالترتيب. قل: {word}!"),
+                              lang, emotion="playful", content=card)
+        return TutorReply(self._encourage(p, lang, _say(lang, f"No, that's not it. Listen: {word}. Can you say {word}?",
+                                                        f"لا، ليست هذه. اسمع: {word}. قل: {word}!")),
+                          lang, emotion="worried", content=card)
+
+    def _drill_correct(self, s: Session, lang: str) -> TutorReply:
+        s.pending = None
+        s.streak += 1
+        s.misses = 0
+        praise = s.rng.choice([_say(lang, "Yes! Great job!", "نعم! أحسنت!"), _say(lang, "That's right!", "صحيح!"),
+                               _say(lang, "Perfect!", "ممتاز!")])
+        nxt = self.present(s, lang, 6)
+        nxt.text = f"{praise} {nxt.text}"
+        nxt.emotion = "excited" if s.streak % 5 == 0 else "proud"
+        return nxt
+
+    def _encourage(self, p: Pending, lang: str, text: str) -> str:
+        return text + (_say(lang, " You can do it!", " أنت تستطيع!") if p.attempts >= 3 else "")
+
+    def _card(self, s: Session, lang: str) -> Content | None:
+        """The current item, so the screen keeps showing it while the child tries again."""
+        if s.mode == "alphabet":
+            if lang == "ar":
+                letter, _, word, _ = C.AR_ALPHABET[s.index % len(C.AR_ALPHABET)]
+            else:
+                letter, word = C.EN_ALPHABET[s.index % len(C.EN_ALPHABET)]
+            return Content("letter", letter, word)
+        if s.mode == "counting" and s.pending and s.pending.expected_number is not None:
+            return Content("number", f"{format_number(s.pending.expected_number - 1)} ?")
+        if s.mode in ("vocab_en", "vocab_ar"):
+            en, ar = C.VOCAB[s.index % len(C.VOCAB)]
+            return Content("word", en.upper(), ar) if s.mode == "vocab_en" else Content("word", ar, en)
+        return None
+
+    def _out_of_order(self, s: Session, text: str, lang: str) -> tuple[str, str] | None:
+        """Another item of the same list (e.g. "elephant" while on G): (its letter, its word)."""
+        if s.mode == "alphabet":
+            items = ([(e[0], e[2]) for e in C.AR_ALPHABET] if lang == "ar" else list(C.EN_ALPHABET))
+            n = len(items)
+        else:
+            items = [(en, en if s.mode == "vocab_en" else ar) for en, ar in C.VOCAB]
+            n = len(items)
+        cur = s.index % n
+        for i, (key, word) in enumerate(items):
+            if i != cur and contains_answer(text, {word}):
+                return key, word
+        return None
 
     def _next_question(self, s: Session, lang: str) -> TutorReply:
         if s.mode == "math":

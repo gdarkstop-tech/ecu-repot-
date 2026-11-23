@@ -70,6 +70,7 @@ bool SettingsStore::load(Settings& s) {
   if (p.isKey("oled_drv")) p.getString("oled_drv", s.oledDriver, sizeof(s.oledDriver));
   if (p.isKey("mic_ch")) p.getString("mic_ch", s.micChannel, sizeof(s.micChannel));
   s.speaker = p.getBool("spk", s.speaker);
+  s.lightScreen = p.getBool("scr_light", s.lightScreen);
   p.end();
   return true;
 }
@@ -126,6 +127,9 @@ bool SettingsStore::set(Settings& s, const char* key, const char* v, char* err, 
   } else if (strcmp(key, "speaker") == 0) {
     if (strcmp(v, "on") && strcmp(v, "off")) ok = fail("speaker_on_off");
     else { s.speaker = strcmp(v, "on") == 0; p.putBool("spk", s.speaker); }
+  } else if (strcmp(key, "screen") == 0) {
+    if (strcmp(v, "light") && strcmp(v, "dark")) ok = fail("screen_light_dark");
+    else { s.lightScreen = strcmp(v, "light") == 0; p.putBool("scr_light", s.lightScreen); }
   } else if (strcmp(key, "mic_channel") == 0) {
     if (strcmp(v, "left") && strcmp(v, "right")) ok = fail("mic_left_right");
     else { copy(s.micChannel, sizeof(s.micChannel), v); p.putString("mic_ch", v); }

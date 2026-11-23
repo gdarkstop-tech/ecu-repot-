@@ -167,13 +167,10 @@ void Conversation::tick(uint32_t now) {
       phase_ = Phase::Speaking;
       phaseSince_ = now;
       audioSeen_ = false;
-      if (!reply_.hasAudio && reply_.longText[0]) {
-        startReading(now);  // text-only robot (or no speech for this answer)
-      } else {
-        textHoldMs_ = 2500;  // subtitle-only reply: let it be read briefly
-        robot_.requestState(RobotState::Speaking, now);
-        if (reply_.oledText[0]) robot_.setMarquee(reply_.oledText, reply_.rtl, now);
-      }
+      if (!reply_.hasAudio && showWithoutSpeech(now)) return;
+      textHoldMs_ = 2500;  // subtitle-only reply: let it be read briefly
+      robot_.requestState(RobotState::Speaking, now);
+      if (cfg_.subtitles && reply_.oledText[0]) robot_.setMarquee(reply_.oledText, reply_.rtl, now);
       return;
     }
 
@@ -191,20 +188,16 @@ void Conversation::tick(uint32_t now) {
       bool noAudioExpected = !reply_.hasAudio && elapsed >= textHoldMs_;  // let the text be read
       bool audioNeverStarted = reply_.hasAudio && !audioSeen_ && elapsed >= cfg_.playbackStartGraceMs;
       bool audioFailed = reply_.hasAudio && audioSeen_ && !active && audio_.lastStreamFailed();
-      if ((audioFailed || audioNeverStarted) && reply_.longText[0]) {
-        // No speech for this answer (e.g. the voice service's free quota is used up): show the
-        // whole answer as text instead of a short subtitle, then listen again as usual.
+      if (audioFailed || audioNeverStarted) {
+        // No speech for this answer (e.g. the voice service's free quota is used up).
         emitTurnEvent(audioFailed ? "audio_failed" : "audio_missing");
         reply_.hasAudio = false;
         audioSeen_ = false;
         phaseSince_ = now;
-        startReading(now);
+        if (!showWithoutSpeech(now)) finishSpeaking(now);
         return;
       }
-      if ((audioSeen_ && !active) || noAudioExpected || audioNeverStarted) {
-        if (audioNeverStarted) emitTurnEvent("audio_missing");
-        finishSpeaking(now);
-      }
+      if ((audioSeen_ && !active) || noAudioExpected) finishSpeaking(now);
       return;
     }
 
@@ -212,6 +205,28 @@ void Conversation::tick(uint32_t now) {
       if ((uint32_t)(now - phaseSince_) >= cfg_.echoTailMs) rearm(now);
       return;
   }
+}
+
+// An answer without speech. Text robots scroll the whole answer; the speaking (BMO) face shows a
+// worried look and, for English, a short label. Returns false when there is nothing to show.
+bool Conversation::showWithoutSpeech(uint32_t now) {
+  if (cfg_.longTextAnswers) {
+    if (!reply_.longText[0]) return false;
+    startReading(now);
+    return true;
+  }
+  showShortAnswer(now);
+  return true;
+}
+
+void Conversation::showShortAnswer(uint32_t now) {
+  bool label = reply_.oledText[0] && !reply_.rtl;  // long or Arabic text is not shown on this face
+  uint32_t hold = label ? readingTimeMs(reply_.oledText, false) : 2500;
+  if (hold > 8000) hold = 8000;
+  textHoldMs_ = hold;
+  robot_.requestState(RobotState::Speaking, now, hold + 3000);
+  robot_.setExpressionOverride(Expression::Worried, now, hold);
+  if (label) robot_.setMarquee(reply_.oledText, false, now);
 }
 
 // A happy face, then the whole answer scrolls, paced for reading.

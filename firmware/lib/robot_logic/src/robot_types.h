@@ -19,19 +19,28 @@ enum class RobotState : uint8_t {
   kCount
 };
 
-// Visual expressions of the OLED face. Blink is a one-shot animation, not a mood.
+// Visual expressions of the face (BMO-inspired style, see face_model.h). Blink is a one-shot
+// animation, not a mood. Names are part of the USB protocol and the gateway contract.
 enum class Expression : uint8_t {
-  Idle = 0,
-  Happy,
+  Idle = 0,   // neutral: dot eyes, small smile
+  Happy,      // open "D" smile
   Listening,
   Thinking,
   Speaking,
   Blink,
-  Sleeping,
+  Sleeping,   // eyes closed, Zz, screen dims
   Surprised,
   Sad,
   Muted,
   Error,
+  Excited,    // very happy: ^ ^ eyes, big grin, blush, sparkles
+  Curious,
+  Confused,
+  Worried,
+  Playful,    // wink + tongue
+  Proud,      // smug: lidded eyes, smirk
+  Offline,
+  Sleepy,     // drowsy, half-closed eyes
   Boot,
   kCount
 };

@@ -24,7 +24,10 @@ from .tutor.mathcheck import correct_claims
 
 log = logging.getLogger("gateway.turn")
 
-ALLOWED_EMOTIONS = {"happy", "sad", "surprised", "idle", "thinking"}
+# Faces the robot can show for a reply (firmware >= 0.5 draws all of them in its BMO-inspired style;
+# older firmware shows "happy" for the ones it does not know).
+ALLOWED_EMOTIONS = {"happy", "sad", "surprised", "idle", "thinking", "excited", "proud", "worried", "curious",
+                    "confused", "playful", "sleepy"}
 
 SYSTEM_PROMPT = """You are {name}, a friendly and patient learning robot for young children.
 You speak out loud through a small speaker, and your words also scroll on a tiny screen.
@@ -202,7 +205,8 @@ class TurnPipeline:
         verdict = check_input(text)
         if not verdict.ok:
             warnings.append(f"input_{verdict.category}")
-            return TutorReply(verdict.reply(lang), lang, emotion="idle", source="safety")
+            return TutorReply(verdict.reply(lang), lang, emotion="worried" if verdict.category == "distress" else "idle",
+                              source="safety")
 
         # 3) Deterministic tutor: modes, answers, arithmetic.
         session.level = session.level if session.mode != "chat" else level_for_age(age)
@@ -225,7 +229,7 @@ class TurnPipeline:
                 # Free-plan limit reached: say so kindly. Never switch to a paid service by ourselves.
                 return TutorReply("So many questions! My brain needs a one-minute break. Then ask me again!"
                                   if lang != "ar" else "أسئلة كثيرة! عقلي يحتاج استراحة دقيقة. ثم اسألني مرة أخرى!",
-                                  lang, emotion="sad", source="fallback")
+                                  lang, emotion="sleepy", source="fallback")
             return TutorReply("Oops, my brain needs a little rest. Can you ask me again in a moment?"
                               if lang != "ar" else "عذرا، عقلي يحتاج راحة قصيرة. هل تسألني مرة أخرى بعد قليل؟",
                               lang, emotion="sad", source="fallback")

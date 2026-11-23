@@ -22,6 +22,7 @@ struct Settings {
   char oledDriver[8] = "sh1106";  // sh1106 | ssd1306
   char micChannel[6] = "left";    // left | right (depends on the INMP441 L/R pin)
   bool speaker = false;           // MAX98357A installed? false = answers shown as text on the OLED
+  bool lightScreen = true;        // BMO look: lit screen, dark face (false: dark screen, lit face)
 
   bool wifiConfigured() const { return wifiSsid[0] != 0; }
   bool gatewayConfigured() const { return gatewayUrl[0] != 0 && deviceToken[0] != 0; }

@@ -27,7 +27,7 @@ There are two interfaces. They are independent: the robot never needs the laptop
 | `hello` | | ack + `hello` event |
 | `status` | | ack + `status` event |
 | `state` | `state`: STARTUP/IDLE/LISTENING/PROCESSING (alias THINKING)/SPEAKING/LEARNING/MUTED/ERROR, `ms` deadline | validated transition (see rules below) |
-| `face` | `expr`: idle, happy, listening, thinking, speaking, blink, sleeping, surprised, sad, muted, error; `ms` (default 2500) | temporary expression override (`blink` = one blink) |
+| `face` | `expr`: idle, happy, excited, listening, thinking, speaking, blink, sleepy, sleeping, curious, confused, surprised, sad, worried, playful, proud, muted, offline, error; `ms` (default 2500) | temporary expression override (`blink` = one blink); see FACE_DESIGN.md |
 | `text` | `text` (≤160 B), `rtl`, `ms` (default 4000) | full-screen text overlay |
 | `show` | `kind`: letter/number/math/word, `value` (≤32 B), `caption` (≤160 B), `rtl`, `ms` (0 = until changed) | learning card, enters LEARNING |
 | `say` | `text`, `rtl`, `ms` | SPEAKING face + subtitle ticker (visual only) |
@@ -49,7 +49,9 @@ There are two interfaces. They are independent: the robot never needs the laptop
 (`https://…`; `http://` only to private LAN IPs for development), `device_token` (16–128 chars
 `[A-Za-z0-9._-]`, secret), `lang` (auto/en/ar), `child_age` (3–12), `volume` (0–100), `mic_gain`
 (1–32), `oled_driver` (sh1106/ssd1306, reboot), `mic_channel` (left/right, reboot), `speaker`
-(on/off, reboot; **off by default**: answers are shown as scrolling text and no audio is requested). Secret values
+(on/off, reboot; **off by default**: answers are shown as scrolling text and no audio is requested;
+**on**: the BMO face talks, no subtitles or long text), `screen` (light = BMO look, default /
+dark). Secret values
 are never printed, logged or returned, and are never silently truncated (too long = rejected).
 
 ### State rules (enforced by the firmware, never by the AI)
@@ -131,7 +133,9 @@ turns starts fresh.
 - `ignore: true` → nothing intelligible was said; the robot silently goes back to listening.
 - Arabic `oled_text`, `value` and `caption` are **pre-shaped presentation forms in visual order**
   (`rtl: true`); the robot has no shaping engine. `oled_text` ≤ 150 bytes, `value` ≤ 32 bytes.
-- `emotion` ∈ happy, sad, surprised, idle, thinking (the robot ignores anything else).
+- `emotion` ∈ happy, sad, surprised, idle, thinking, excited, proud, worried, curious, confused,
+  playful, sleepy (firmware < 0.5 shows "happy" for the newer ones; system faces such as muted,
+  error or offline are never accepted from the gateway).
 - The robot accepts `audio.path` only as a relative `/v1/...` path (≤ 1023 characters of
   `[A-Za-z0-9/_.-]`, no `..`) on the same gateway (so its token can never be sent elsewhere),
   `format` = `pcm_s16le`, `sample_rate` ∈ 8000/16000/22050/24000. `bytes` / `duration_ms` are

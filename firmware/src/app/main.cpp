@@ -29,7 +29,7 @@
 #include "vad.h"
 
 #ifndef ROBOT_FW_VERSION
-#define ROBOT_FW_VERSION "0.4.0"
+#define ROBOT_FW_VERSION "0.5.0"
 #endif
 
 using namespace robot;
@@ -130,6 +130,7 @@ void emitConfig() {
   doc["oled_driver"] = g_settings.oledDriver;
   doc["mic_channel"] = g_settings.micChannel;
   doc["speaker"] = g_settings.speaker ? "on" : "off";
+  doc["screen"] = g_settings.lightScreen ? "light" : "dark";
   char line[512];
   serializeJson(doc, line, sizeof(line));
   g_link.writeLine(line);
@@ -145,6 +146,7 @@ bool Platform::runCommand(const DebugCommand& c, char* err, size_t n) {
       if (strcmp(c.key, "volume") == 0) g_spk.setVolume(g_settings.volume);
       if (strcmp(c.key, "mic_gain") == 0) g_mic.setGain(g_settings.micGain);
       if (strcmp(c.key, "child_age") == 0) g_offline.setAge(g_settings.childAge);
+      if (strcmp(c.key, "screen") == 0) g_face.setLightScreen(g_settings.lightScreen);
       bool needsReboot = strcmp(c.key, "oled_driver") == 0 || strcmp(c.key, "mic_channel") == 0 ||
                          strcmp(c.key, "speaker") == 0;
       char line[160];
@@ -337,6 +339,9 @@ void setup() {
   bool settingsOk = g_store.load(g_settings);
   g_oled.begin(g_settings.oledDriver);
   g_face.reset(now, esp_random());
+  g_face.setLightScreen(g_settings.lightScreen);
+  // With a speaker the BMO face does the talking (no long text); without one, answers scroll.
+  g_conv.setTextAnswers(!g_settings.speaker);
   g_robot.begin(now);
   g_link.logf("info", "boot fw=%s settings=%s oled=%s@0x%02X psram=%u", ROBOT_FW_VERSION,
               settingsOk ? "loaded" : "defaults", g_oled.present() ? "ok" : "MISSING", g_oled.address(),

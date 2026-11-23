@@ -31,10 +31,18 @@ const SelftestStep kSelftest[] = {
     {"listening", Expression::Listening, ContentKind::None, "", "", 2500},
     {"thinking", Expression::Thinking, ContentKind::None, "", "", 2500},
     {"speaking", Expression::Speaking, ContentKind::None, "", "", 2500},
+    {"excited", Expression::Excited, ContentKind::None, "", "", 2500},
+    {"curious", Expression::Curious, ContentKind::None, "", "", 2500},
+    {"confused", Expression::Confused, ContentKind::None, "", "", 2500},
     {"surprised", Expression::Surprised, ContentKind::None, "", "", 2500},
     {"sad", Expression::Sad, ContentKind::None, "", "", 2500},
+    {"worried", Expression::Worried, ContentKind::None, "", "", 2500},
+    {"playful", Expression::Playful, ContentKind::None, "", "", 2500},
+    {"proud", Expression::Proud, ContentKind::None, "", "", 2500},
+    {"sleepy", Expression::Sleepy, ContentKind::None, "", "", 3000},
     {"sleeping", Expression::Sleeping, ContentKind::None, "", "", 3000},
     {"muted", Expression::Muted, ContentKind::None, "", "", 2500},
+    {"offline", Expression::Offline, ContentKind::None, "", "", 2500},
     {"error", Expression::Error, ContentKind::None, "", "", 2500},
     {"letter", Expression::Idle, ContentKind::Letter, "A", "Apple", 2500},
     {"number", Expression::Idle, ContentKind::Number, "42", "forty-two", 2500},
@@ -425,6 +433,8 @@ Expression Robot::resolveExpression(uint32_t now) const {
   if (st == RobotState::Error) return Expression::Error;
   if (overrideActive_ && !reached(now, overrideUntil_)) return override_;
   if (sm_.sleeping(now)) return Expression::Sleeping;
+  // Resting without a network: the offline face (the Wi-Fi-off mark replaces the corner icon).
+  if (st == RobotState::Idle && (offline_ || (wifiConfigured_ && !wifiConnected_))) return Expression::Offline;
   return defaultExpression(st);
 }
 

@@ -10,7 +10,7 @@ Console commands (anything starting with '{' is sent as raw JSON):
     status | ping | selftest | mic 3000 | tone 440 | loopback | wifi | ask <question> | config_get
     read <text>        show text the way an answer is shown without a speaker
     set <key> <value>   (wifi_ssid, gateway_url, lang, child_age, volume, mic_gain, oled_driver, mic_channel,
-                         speaker on|off)
+                         speaker on|off, screen light|dark)
     secret <key>        (wifi_pass / device_token, typed hidden)
     reboot | quit
 """

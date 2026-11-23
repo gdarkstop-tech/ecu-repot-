@@ -19,6 +19,7 @@ FRAME_BYTES = W * H // 8
 ON = (225, 240, 255)
 OFF = (6, 8, 12)
 GAP = (14, 17, 22)
+ON_GAP = (176, 190, 204)
 
 
 def load_frames(path: Path) -> list[bytes]:
@@ -33,11 +34,35 @@ def frame_to_image(frame: bytes, scale: int = SCALE) -> Image.Image:
     draw = ImageDraw.Draw(img)
     for y in range(H):
         for x in range(W):
-            colour = ON if px[x, y] else OFF
-            draw.rectangle(
-                [x * scale, y * scale, x * scale + scale - 2, y * scale + scale - 2], fill=colour
-            )
+            on = px[x, y]
+            # A faint gap between pixels, like the real panel (lighter on a lit area so the light,
+            # BMO-style screen does not look like a dark mesh).
+            draw.rectangle([x * scale, y * scale, x * scale + scale - 1, y * scale + scale - 1],
+                           fill=ON_GAP if on else GAP)
+            draw.rectangle([x * scale, y * scale, x * scale + scale - 2, y * scale + scale - 2],
+                           fill=ON if on else OFF)
     return img
+
+
+# The BMO-inspired faces, in the order of the design list (docs/FACE_DESIGN.md).
+FACE_SCENES = ["idle", "blink", "happy", "excited", "listening", "thinking", "speaking", "sleepy", "sleeping",
+               "curious", "confused", "sad", "worried", "playful", "proud", "surprised", "muted", "offline",
+               "error", "boot"]
+
+
+def write_sheet(tiles, path, order=None, cols=4) -> None:
+    if order:
+        tiles = sorted(tiles, key=lambda nt: order.index(nt[0]))
+    tw, th, label_h = W * 3, H * 3, 22
+    rows = (len(tiles) + cols - 1) // cols
+    sheet = Image.new("RGB", (cols * (tw + 12) + 12, rows * (th + label_h + 12) + 12), (30, 33, 40))
+    d = ImageDraw.Draw(sheet)
+    for i, (name, tile) in enumerate(tiles):
+        cx = 12 + (i % cols) * (tw + 12)
+        cy = 12 + (i // cols) * (th + label_h + 12)
+        sheet.paste(tile, (cx, cy + label_h))
+        d.text((cx + 2, cy + 4), name, fill=(200, 210, 225))
+    sheet.save(path)
 
 
 def main() -> int:
@@ -57,6 +82,8 @@ def main() -> int:
         )
         pick = {"boot": frames[int(len(frames) * 0.45)], "blink": frames[min(2, len(frames) - 1)],
                 "reading_en": frames[min(30, len(frames) - 1)], "reading_ar": frames[min(30, len(frames) - 1)]}.get(name, frames[len(frames) // 2])
+        if name == "speaking":  # show the talking mouth at its widest (most dark pixels on a lit screen)
+            pick = max(frames, key=lambda f: sum(8 - bin(b).count("1") for b in f))
         tiles.append((name, frame_to_image(pick, 3)))
 
     cols = 4
@@ -71,6 +98,8 @@ def main() -> int:
         sheet.paste(tile, (cx, cy + label_h))
         d.text((cx + 2, cy + 4), name, fill=(200, 210, 225))
     sheet.save(out / "oled_gallery.png")
+    write_sheet([(n, im) for n, im in tiles if n in FACE_SCENES], out / "faces.png",
+                order=FACE_SCENES)
     print(f"wrote {len(tiles)} scenes to {out}")
     return 0
 

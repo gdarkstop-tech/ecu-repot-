@@ -315,6 +315,62 @@ void test_successful_speech_does_not_show_reading_text() {
   TEST_ASSERT_EQUAL((int)RobotState::Listening, (int)r.state());
 }
 
+// ---- the speaking BMO face (robot with a speaker): no long text, no subtitles
+static void speakerReply(Rig& r, const char* oled, bool rtl) {
+  r.conv.setTextAnswers(false);
+  r.robot.setMuted(false, r.t);
+  r.conv.submitText("why is the sky blue", "en", r.t);
+  snprintf(r.gw.reply.oledText, sizeof(r.gw.reply.oledText), "%s", oled);
+  snprintf(r.gw.reply.longText, sizeof(r.gw.reply.longText), "%s", "A long answer that must not scroll on the face.");
+  r.gw.reply.rtl = rtl;
+  r.gw.reply.longRtl = rtl;
+  r.gw.reply.hasAudio = true;
+  r.gw.next = GatewayPoll::Reply;
+}
+
+void test_speaking_face_shows_no_text() {
+  Rig r;
+  speakerReply(r, "Air scatters blue light.", false);
+  r.audio.playing = true;
+  r.run(false, 20);
+  const ViewModel& v = r.robot.view(r.t);
+  TEST_ASSERT_EQUAL((int)RobotState::Speaking, (int)v.state);
+  TEST_ASSERT_EQUAL((int)Expression::Speaking, (int)v.expression);
+  TEST_ASSERT_EQUAL_STRING("", v.marquee);
+  TEST_ASSERT_EQUAL_STRING("", v.readingText);
+}
+
+void test_failed_voice_worried_face_with_short_english_label() {
+  Rig r;
+  speakerReply(r, "Air scatters blue light.", false);
+  r.audio.playing = true;
+  r.run(false, 3);
+  r.audio.playing = false;
+  r.audio.failed = true;  // HTTP 429 from the voice service
+  r.run(false, 2);
+  const ViewModel& v = r.robot.view(r.t);
+  TEST_ASSERT_TRUE(r.p.saw("audio_failed"));
+  TEST_ASSERT_EQUAL((int)Expression::Worried, (int)v.expression);
+  TEST_ASSERT_EQUAL_STRING("Air scatters blue light.", v.marquee);  // a short label, not the long answer
+  TEST_ASSERT_EQUAL_STRING("", v.readingText);
+  r.run(false, 300);
+  TEST_ASSERT_NOT_EQUAL((int)RobotState::Speaking, (int)r.state());
+}
+
+void test_failed_voice_in_arabic_shows_only_the_face() {
+  Rig r;
+  speakerReply(r, "\xEF\xBA\x8F", true);  // Arabic (pre-shaped) short text
+  r.audio.playing = true;
+  r.run(false, 3);
+  r.audio.playing = false;
+  r.audio.failed = true;
+  r.run(false, 2);
+  const ViewModel& v = r.robot.view(r.t);
+  TEST_ASSERT_EQUAL((int)Expression::Worried, (int)v.expression);
+  TEST_ASSERT_EQUAL_STRING("", v.marquee);
+  TEST_ASSERT_EQUAL_STRING("", v.readingText);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_muted_robot_never_listens_or_submits);
@@ -331,5 +387,8 @@ int main() {
   RUN_TEST(test_failed_speech_shows_the_whole_answer_as_text);
   RUN_TEST(test_speech_that_never_starts_also_falls_back_to_text);
   RUN_TEST(test_successful_speech_does_not_show_reading_text);
+  RUN_TEST(test_speaking_face_shows_no_text);
+  RUN_TEST(test_failed_voice_worried_face_with_short_english_label);
+  RUN_TEST(test_failed_voice_in_arabic_shows_only_the_face);
   return UNITY_END();
 }
