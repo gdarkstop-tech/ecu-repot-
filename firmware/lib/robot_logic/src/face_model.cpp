@@ -37,18 +37,19 @@ FacePose designFor(Expression e) {
     p.eye[1].kind = r;
   };
   switch (e) {
-    case Expression::Idle:
+    case Expression::Idle:   // BMO's own face: round dot eyes, open mouth with teeth and tongue
     case Expression::Blink:
     case Expression::Boot:
-      p.mouth = MouthKind::Smile;
+      p.mouth = MouthKind::Grin;
       break;
     case Expression::Happy:
-      p.mouth = MouthKind::Grin;
+      p.mouth = MouthKind::BigGrin;
       break;
     case Expression::Excited:
       eyes(EyeKind::Arc, EyeKind::Arc);
       p.mouth = MouthKind::BigGrin;
       p.marks = kMarkBlush | kMarkSparkle;
+      p.eye[0].dy = p.eye[1].dy = -1;
       break;
     case Expression::Listening:
       p.eye[0].scale = p.eye[1].scale = 1.15f;
@@ -93,9 +94,8 @@ FacePose designFor(Expression e) {
       p.marks = kMarkBrows | kMarkSweat;
       break;
     case Expression::Curious:
-      p.eye[0].scale = 1.25f;
-      p.eye[1].scale = 0.9f;
-      p.eye[1].dy = -2;
+      p.eye[0].scale = 1.3f;   // one big eye, the other normal and raised: a head tilt
+      p.eye[1].dy = -3;
       p.mouth = MouthKind::SmallO;
       p.mouthDx = 4;
       break;

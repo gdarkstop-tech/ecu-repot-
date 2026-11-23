@@ -35,8 +35,9 @@ void test_every_expression_has_its_own_design() {
       snprintf(msg, sizeof(msg), "%s vs %s", toString(all[i]), toString(all[j]));
       TEST_ASSERT_FALSE_MESSAGE(samePose(designFor(all[i]), designFor(all[j])), msg);
     }
-  // BMO's signature parts
+  // BMO's signature parts: round dot eyes and the open mouth with teeth and tongue
   TEST_ASSERT_EQUAL((int)EyeKind::Dot, (int)designFor(Expression::Idle).eye[0].kind);
+  TEST_ASSERT_EQUAL((int)MouthKind::Grin, (int)designFor(Expression::Idle).mouth);
   TEST_ASSERT_EQUAL((int)EyeKind::Arc, (int)designFor(Expression::Excited).eye[0].kind);
   TEST_ASSERT_TRUE(designFor(Expression::Playful).eye[0].kind != designFor(Expression::Playful).eye[1].kind);  // wink
   TEST_ASSERT_EQUAL((int)MouthKind::Zipper, (int)designFor(Expression::Muted).mouth);
@@ -137,7 +138,7 @@ void test_talking_mouth_follows_level_without_flicker() {
   vm.audioLevel = 0;
   vm.expression = Expression::Idle;
   for (uint32_t t = 6000; t < 7000; t += 33) a.update(vm, t);
-  TEST_ASSERT_EQUAL((int)MouthKind::Smile, (int)a.update(vm, 7000).mouth);
+  TEST_ASSERT_EQUAL((int)MouthKind::Grin, (int)a.update(vm, 7000).mouth);  // BMO's resting open mouth
 }
 
 void test_expression_change_happens_behind_a_blink() {
@@ -149,10 +150,10 @@ void test_expression_change_happens_behind_a_blink() {
   vm.expression = Expression::Happy;
   FacePose first = a.update(vm, 1000);
   TEST_ASSERT_EQUAL_UINT32(before + 1, a.blinkCount());
-  TEST_ASSERT_EQUAL((int)MouthKind::Smile, (int)first.mouth);  // old face until the eyes close
+  TEST_ASSERT_EQUAL((int)MouthKind::Grin, (int)first.mouth);  // old face until the eyes close
   FacePose p;
   for (uint32_t t = 1033; t < 1400; t += 33) p = a.update(vm, t);
-  TEST_ASSERT_EQUAL((int)MouthKind::Grin, (int)p.mouth);
+  TEST_ASSERT_EQUAL((int)MouthKind::BigGrin, (int)p.mouth);
   TEST_ASSERT_EQUAL_FLOAT(1.0f, p.eye[0].open);  // and open again
 }
 

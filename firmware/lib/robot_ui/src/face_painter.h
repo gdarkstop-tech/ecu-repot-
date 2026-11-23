@@ -12,11 +12,13 @@
 
 namespace robot {
 
+// Proportions measured from BMO's face: round dot eyes at ~27 % / 73 % of the width and 40 % of
+// the height; a wide open mouth (~30 % of the width) whose corners sit at ~66 % of the height.
 struct FaceLayout {
-  int eyeX[2] = {40, 88};  // eye centres (BMO's eyes sit wide apart, upper half)
-  int eyeY = 24;
-  int mouthX = 64;
-  int mouthY = 43;
+  int eyeX[2] = {34, 94};
+  int eyeY = 25;
+  int mouthX = 64;  // the mouth is symmetric around the pixel boundary 63|64
+  int mouthY = 42;  // the line through the mouth's corners
 };
 
 class MonoFacePainter {
@@ -29,6 +31,12 @@ class MonoFacePainter {
   static void thickHLine(u8g2_t* g, int x, int y, int w, int t = 2);
   static void thickLine(u8g2_t* g, int x0, int y0, int x1, int y1);
   static void arc(u8g2_t* g, int cx, int cy, int rx, int ry, uint8_t opt);  // 2 px outline
+  // Sub-pixel ellipse: fills pixels whose centres lie inside. part: 0 all, 1 upper, 2 lower half.
+  static void fillEllipseF(u8g2_t* g, float cx, float cy, float rx, float ry, Role r, int part = 0);
+  // BMO's open mouth: dark body (flat-ish top, deeper round bottom), a lit teeth band under the
+  // top lip and a lighter (dithered) tongue at the bottom.
+  static void bmoMouth(u8g2_t* g, float cx, float cy, float rx, float top, float bottom, int teeth,
+                       float tongueRx, float tongueRy);
   static void micOffIcon(u8g2_t* g, int x, int y);   // 11 x 14
   static void wifiOffIcon(u8g2_t* g, int x, int y);  // 11 x 9
 

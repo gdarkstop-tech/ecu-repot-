@@ -120,7 +120,7 @@ void FaceRenderer::drawBoot(u8g2_t* g, const ViewModel& vm, uint32_t now) {
     FacePose p = pose_;
     float open = t < 1250 ? (float)(t - 950) / 300.0f : 1.0f;  // eyes open
     p.eye[0].open = p.eye[1].open = open;
-    p.mouth = MouthKind::Smile;
+    p.mouth = t < 1250 ? MouthKind::Smile : MouthKind::Grin;  // then BMO's open mouth
     p.marks = 0;
     painter_.draw(g, p, layout_);
     for (int i = 0; i < 3; i++) {  // loading blocks

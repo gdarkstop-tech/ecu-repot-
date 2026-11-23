@@ -39,6 +39,55 @@ void MonoFacePainter::fillEllipse(u8g2_t* g, int cx, int cy, int rx, int ry, Rol
   }
 }
 
+namespace {
+inline bool inEllipse(float px, float py, float cx, float cy, float rx, float ry) {
+  if (rx <= 0 || ry <= 0) return false;
+  float dx = (px - cx) / rx, dy = (py - cy) / ry;
+  return dx * dx + dy * dy <= 1.0f;
+}
+// Inside the mouth outline: upper half uses `top`, lower half `bottom` as vertical radius.
+inline bool inMouth(float px, float py, float cx, float cy, float rx, float top, float bottom) {
+  return inEllipse(px, py, cx, cy, rx, py < cy ? top : bottom);
+}
+}  // namespace
+
+void MonoFacePainter::fillEllipseF(u8g2_t* g, float cx, float cy, float rx, float ry, Role r, int part) {
+  if (rx <= 0.3f || ry <= 0.3f) return;
+  setRole(g, r == Role::Screen ? Role::Screen : Role::Feature);
+  int y0 = (int)floorf(cy - ry), y1 = (int)ceilf(cy + ry), x0 = (int)floorf(cx - rx), x1 = (int)ceilf(cx + rx);
+  for (int y = y0; y <= y1; y++) {
+    float py = y + 0.5f;
+    if ((part == 1 && py > cy) || (part == 2 && py < cy)) continue;
+    for (int x = x0; x <= x1; x++)
+      if (inEllipse(x + 0.5f, py, cx, cy, rx, ry) && (r != Role::Accent || ((x + y) & 1) == 0)) pixel(g, x, y);
+  }
+  setRole(g, Role::Feature);
+}
+
+void MonoFacePainter::bmoMouth(u8g2_t* g, float cx, float cy, float rx, float top, float bottom, int teeth,
+                               float tongueRx, float tongueRy) {
+  int y0 = (int)floorf(cy - top), y1 = (int)ceilf(cy + bottom), x0 = (int)floorf(cx - rx), x1 = (int)ceilf(cx + rx);
+  for (int y = y0; y <= y1; y++) {
+    for (int x = x0; x <= x1; x++) {
+      float px = x + 0.5f, py = y + 0.5f;
+      if (!inMouth(px, py, cx, cy, rx, top, bottom)) continue;
+      bool lit = false;
+      // Teeth: the band between the top lip (a 2 px dark edge, so white teeth stand apart from
+      // the lit screen) and the same curve `teeth` px lower.
+      if (teeth > 0 && py < cy && inEllipse(px, py, cx, cy, rx - 2.6f, top - 2.0f) &&
+          !inEllipse(px, py, cx, cy + teeth, rx - 2.6f, top - 2.0f))
+        lit = true;
+      // Tongue: a hump rising from the bottom, kept 1 px inside the outline, half-tone.
+      if (!lit && tongueRx > 0 && py > cy && inEllipse(px, py, cx, cy + bottom, tongueRx, tongueRy) &&
+          inMouth(px, py, cx, cy, rx - 1.5f, top, bottom - 1.2f))
+        lit = ((x + y) & 1) == 0;
+      setRole(g, lit ? Role::Screen : Role::Feature);
+      pixel(g, x, y);
+    }
+  }
+  setRole(g, Role::Feature);
+}
+
 void MonoFacePainter::thickHLine(u8g2_t* g, int x, int y, int w, int t) {
   if (w > 0 && t > 0) u8g2_DrawBox(g, (u8g2_uint_t)x, (u8g2_uint_t)y, (u8g2_uint_t)w, (u8g2_uint_t)t);
 }
@@ -81,10 +130,10 @@ void MonoFacePainter::wifiOffIcon(u8g2_t* g, int x, int y) {
 void MonoFacePainter::eye(u8g2_t* g, int cx, int cy, const EyePose& e, bool left) {
   float s = e.scale;
   switch (e.kind) {
-    case EyeKind::Dot: {
-      int rx = iround(5.0f * s), ry = iround(7.0f * s * e.open);
-      if (ry <= 1) thickHLine(g, cx - 6, cy, 13);
-      else fillEllipse(g, cx, cy, rx, ry, Role::Feature);
+    case EyeKind::Dot: {  // BMO's round dot: 8 x 9 px at scale 1
+      float ry = 4.5f * s * e.open;
+      if (ry < 1.2f) thickHLine(g, cx - 5, cy, 10);
+      else fillEllipseF(g, (float)cx, cy + 0.5f, 4.0f * s, ry, Role::Feature);
       break;
     }
     case EyeKind::Closed:
@@ -126,26 +175,31 @@ void MonoFacePainter::eye(u8g2_t* g, int cx, int cy, const EyePose& e, bool left
 
 // ------------------------------------------------------------------ mouth
 void MonoFacePainter::mouth(u8g2_t* g, int cx, int cy, const FacePose& p) {
-  auto openMouth = [&](int rx, int ry, int top, bool tongue) {
-    fillEllipse(g, cx, top, rx, ry, Role::Feature, kLower);
-    thickHLine(g, cx - rx, top, 2 * rx + 1, 1);
-    if (tongue && ry >= 5) fillEllipse(g, cx + 1, top + ry - 1, rx / 2, ry / 3 + 1, Role::Screen, kUpper);
-  };
+  const float mx = (float)cx, my = (float)cy;  // corner line; symmetric around pixel boundary cx
   switch (p.mouth) {
-    case MouthKind::Smile:
-      arc(g, cx, cy - 3, 10, 4, kLower);
+    case MouthKind::Grin:     // BMO's own open mouth (proportions from the show's face)
+      bmoMouth(g, mx, my, 19, 7, 9, 3, 9, 5);
+      break;
+    case MouthKind::BigGrin:  // wider and deeper
+      bmoMouth(g, mx, my, 22, 7.5f, 12, 3, 11, 6.5f);
+      break;
+    case MouthKind::BigO:     // surprised: a tall round open mouth
+      bmoMouth(g, mx, my + 1, 8, 7, 8, 2, 4.5f, 4);
+      break;
+    case MouthKind::Tongue:   // playful: open mouth with the tongue out over the lower lip
+      bmoMouth(g, mx, my, 16, 6.5f, 7, 3, 0, 0);
+      fillEllipseF(g, mx + 5, my + 7.5f, 5, 5, Role::Feature, 2);
+      fillEllipseF(g, mx + 5, my + 7.5f, 3.6f, 3.6f, Role::Screen, 2);
+      fillEllipseF(g, mx + 5, my + 7.5f, 3.6f, 3.6f, Role::Accent, 2);
+      break;
+    case MouthKind::Smile:    // closed smile line
+      arc(g, cx, cy - 3, 11, 4, kLower);
       break;
     case MouthKind::Flat:
-      thickHLine(g, cx - 7, cy, 15);
-      break;
-    case MouthKind::Grin:
-      openMouth(11, 9, cy - 4, true);
-      break;
-    case MouthKind::BigGrin:
-      openMouth(14, 11, cy - 5, true);
+      thickHLine(g, cx - 8, cy, 16);
       break;
     case MouthKind::Frown:
-      arc(g, cx, cy + 4, 9, 4, kUpper);
+      arc(g, cx, cy + 4, 10, 4, kUpper);
       break;
     case MouthKind::Wavy: {
       int px = cx - 10, py = cy + iround(1.5f * sinf(-10 * 0.6f));
@@ -157,35 +211,25 @@ void MonoFacePainter::mouth(u8g2_t* g, int cx, int cy, const FacePose& p) {
       }
       break;
     }
-    case MouthKind::SmallO:  // a clean 2 px ring
-      fillEllipse(g, cx, cy, 4, 4, Role::Feature);
-      fillEllipse(g, cx, cy, 2, 2, Role::Screen);
-      break;
-    case MouthKind::BigO:
-      fillEllipse(g, cx, cy, 5, 6, Role::Feature);
+    case MouthKind::SmallO:  // a small open "o" (yawn, snore, wonder)
+      fillEllipseF(g, mx, my + 0.5f, 4, 4.5f, Role::Feature);
+      fillEllipseF(g, mx, my + 0.5f, 2, 2.5f, Role::Screen);
       break;
     case MouthKind::Smirk:
-      thickLine(g, cx - 8, cy, cx + 2, cy);
+      thickLine(g, cx - 9, cy, cx + 2, cy);
       thickLine(g, cx + 2, cy, cx + 6, cy - 1);
-      thickLine(g, cx + 6, cy - 1, cx + 9, cy - 4);
-      break;
-    case MouthKind::Tongue:
-      arc(g, cx, cy - 3, 10, 4, kLower);
-      fillEllipse(g, cx + 3, cy + 1, 4, 5, Role::Feature, kLower);
-      setRole(g, Role::Screen);
-      u8g2_DrawVLine(g, (u8g2_uint_t)(cx + 3), (u8g2_uint_t)(cy + 2), 3);
-      setRole(g, Role::Feature);
+      thickLine(g, cx + 6, cy - 1, cx + 10, cy - 4);
       break;
     case MouthKind::Zipper:
       thickHLine(g, cx - 11, cy, 23);
       for (int x = cx - 10; x <= cx + 10; x += 4) u8g2_DrawVLine(g, (u8g2_uint_t)x, (u8g2_uint_t)(cy - 2), 6);
       break;
-    case MouthKind::Talk: {
+    case MouthKind::Talk: {  // BMO talking: closed -> small -> medium -> full open mouth
       int step = iround(p.mouthOpen * 3);
-      if (step <= 0) thickHLine(g, cx - 6, cy, 13);
-      else if (step == 1) fillEllipse(g, cx, cy, 6, 2, Role::Feature);
-      else if (step == 2) openMouth(8, 6, cy - 3, false);
-      else openMouth(11, 9, cy - 4, true);
+      if (step <= 0) arc(g, cx, cy - 3, 11, 4, kLower);
+      else if (step == 1) bmoMouth(g, mx, my, 12, 4.5f, 4, 2, 0, 0);
+      else if (step == 2) bmoMouth(g, mx, my, 16, 6, 7, 2, 6, 3.5f);
+      else bmoMouth(g, mx, my, 19, 7, 9, 3, 9, 5);
       break;
     }
     default:
