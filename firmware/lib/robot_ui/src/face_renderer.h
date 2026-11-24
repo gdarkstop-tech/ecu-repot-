@@ -4,7 +4,8 @@
 // host simulator (which renders reference images for review and tests).
 //
 // The face itself is described by the display-independent face model (face_model.h: poses +
-// animation) and drawn by MonoFacePainter. By default the screen is "light": the buffer is
+// animation) and drawn by the display-independent FacePainter (face_canvas.h) through a U8g2
+// surface that maps tones to lit/dark/half-tone pixels. By default the screen is "light": the buffer is
 // inverted at the end of each frame so the OLED shows dark features on a lit screen, like BMO.
 // Sleeping switches to a dark screen (and saves the OLED). What to show is decided by Robot and
 // delivered as a ViewModel each frame.
@@ -13,7 +14,7 @@
 #include <clib/u8g2.h>
 
 #include "face_model.h"
-#include "face_painter.h"
+#include "face_canvas.h"
 #include "view_model.h"
 
 namespace robot {
@@ -46,7 +47,6 @@ class FaceRenderer {
   void drawMarquee(u8g2_t* g, const ViewModel& vm, uint32_t now, int top);
 
   FaceAnimator anim_;
-  MonoFacePainter painter_;
   FaceLayout layout_;
   FacePose pose_;
   bool light_ = true;

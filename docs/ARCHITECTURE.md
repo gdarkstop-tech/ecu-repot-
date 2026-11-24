@@ -31,12 +31,12 @@ independently hosted AI gateway over Wi-Fi.
 
 | Path | What | Verified how |
 |---|---|---|
-| `firmware/lib/robot_logic` | Portable C++: state machine, USB protocol, VAD, utterance capture, conversation loop, offline tutor, gateway-reply parser | 73 host unit tests (`pio test -e native`) |
-| `firmware/lib/robot_ui` | Face/screens renderer on the U8g2 C API | Rendered on the host through the real U8g2 library (`docs/media`) |
+| `firmware/lib/robot_logic` | Portable C++: state machine, USB protocol, VAD, utterance capture, conversation loop, offline tutor, gateway-reply parser, face model + display-independent face painter | 114 host unit tests (`pio test -e native`) |
+| `firmware/lib/robot_ui` | Screens on the U8g2 C API (face via the portable painter, cards, text) | Rendered on the host through the real U8g2 library (`docs/media`) |
 | `firmware/lib/robot_hw` | ESP32 adapters: OLED, button, I2S mic/speaker, Wi-Fi, NVS settings, HTTPS gateway client | Compiles; **needs hardware verification** |
 | `firmware/src/diag` | Minimal diagnostic firmware | Compiles; **needs hardware verification** |
 | `firmware/sim` | Host simulator (same logic + renderer) | Used by tests and tools |
-| `gateway/` | Python FastAPI AI gateway | 55 tests; ran under uvicorn with real HTTP |
+| `gateway/` | Python FastAPI AI gateway | 215 tests; ran under uvicorn with real HTTP |
 | `tools/` | Laptop dev tools: verify/flash, console/provisioning, gateway client, generators | Verification tool exercised against the simulator |
 
 ## Key decisions (ADRs)
@@ -123,11 +123,23 @@ buffer is inverted at the end of each frame; sleeping switches to a dark screen)
 data — `FacePose` (eye kinds, mouth kind, marks, offsets) produced by a deterministic
 `FaceAnimator` (seeded blink schedule, fixed small gaze pattern, eased posture, quantised talking
 mouth, expression changes behind a blink) — in `robot_logic`, unit-tested on the host. The
-U8g2 painter maps semantic colour roles (Screen / Feature / Accent) to lit, dark and dithered
-pixels, so a colour display later needs only a new painter. With a speaker the face does the
-talking: no subtitles or long text (Arabic presentation forms render poorly at 16 px); a failed
-voice shows a worried face and a short English label. Drawings are original geometry, not
-copied artwork.
+portable painter (`face_canvas`, 0.6) draws a pose with sub-pixel geometry as semantic TONES
+(screen, ink, lip, mouth, teeth, tongue, blush, heart, star, tear...) on any `Surface` at any scale:
+the SH1106 surface maps them to lit / dark / dithered pixels, a colour surface to BMO's palette
+(mint-green screen, green mouth, white teeth, light-green tongue). The same code renders the
+colour previews and is unit-tested on the host, so a colour TFT needs only a new `Surface`
+(a few lines) and a scale factor. With a speaker the face does the talking: no subtitles or long
+text (Arabic presentation forms render poorly at 16 px); a failed voice shows a worried face and
+a short English label. Drawings are original geometry, not copied artwork.
+
+**ADR-14 — Personality reactions are deterministic and bounded.** "Make a laughing face", a rude
+word, a compliment, laughter or "boo!" get an immediate face and a short line from fixed word
+lists in English and Arabic (incl. Egyptian) — no model call, so no free quota is spent and the
+behaviour is testable. A reaction never runs on a practice answer and never changes the practice
+item. The gateway can only name a face from an allow-list (system faces such as muted, error or
+offline stay the robot's own) and ask for `emotion_ms` ≤ 10 s; the firmware re-checks both. While
+it speaks, the robot keeps the mood's eyes and marks with a talking mouth; when the child starts
+talking again, the reaction gives way to the listening face at once.
 
 ## Security and privacy
 

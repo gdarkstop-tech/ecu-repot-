@@ -371,6 +371,28 @@ void test_failed_voice_in_arabic_shows_only_the_face() {
   TEST_ASSERT_EQUAL_STRING("", v.readingText);
 }
 
+// A reaction ("make a laughing face", a rude word): the robot talks with the mood's eyes, then
+// holds the full expression for the time the reply asked for; talking again cuts it short.
+void test_reply_mood_while_talking_then_held_for_emotion_ms() {
+  Rig r;
+  speakerReply(r, "Ha ha ha!", false);
+  r.gw.reply.emotion = Expression::Laughing;
+  r.gw.reply.emotionMs = 4000;
+  r.audio.playing = true;
+  r.run(false, 20);
+  const ViewModel& v = r.robot.view(r.t);
+  TEST_ASSERT_EQUAL((int)Expression::Speaking, (int)v.expression);
+  TEST_ASSERT_EQUAL((int)Expression::Laughing, (int)v.mood);
+  r.audio.playing = false;
+  r.run(false, 30);  // echo tail, then rearm
+  TEST_ASSERT_EQUAL((int)Expression::Laughing, (int)r.robot.view(r.t).expression);
+  TEST_ASSERT_EQUAL((int)Expression::Idle, (int)r.robot.view(r.t).mood);  // mood only while speaking
+  r.run(false, 100);  // 2 s later: still laughing (the default would have ended after 1.8 s)
+  TEST_ASSERT_EQUAL((int)Expression::Laughing, (int)r.robot.view(r.t).expression);
+  r.run(true, 10);  // the child talks: the listening face comes back at once
+  TEST_ASSERT_EQUAL((int)Expression::Listening, (int)r.robot.view(r.t).expression);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_muted_robot_never_listens_or_submits);
@@ -390,5 +412,6 @@ int main() {
   RUN_TEST(test_speaking_face_shows_no_text);
   RUN_TEST(test_failed_voice_worried_face_with_short_english_label);
   RUN_TEST(test_failed_voice_in_arabic_shows_only_the_face);
+  RUN_TEST(test_reply_mood_while_talking_then_held_for_emotion_ms);
   return UNITY_END();
 }

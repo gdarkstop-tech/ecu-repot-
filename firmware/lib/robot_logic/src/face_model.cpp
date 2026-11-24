@@ -19,7 +19,25 @@ inline float smoothstep(float x) {
 const int8_t kGaze[][2] = {{0, 0}, {2, 0}, {0, 0}, {-2, -1}, {0, 0}, {1, 1}, {0, 0}, {-1, 0}};
 constexpr int kGazeSteps = sizeof(kGaze) / sizeof(kGaze[0]);
 
-bool canBlink(EyeKind k) { return k == EyeKind::Dot || k == EyeKind::Lidded || k == EyeKind::Sleepy; }
+bool canBlink(EyeKind k) {
+  return k == EyeKind::Dot || k == EyeKind::Lidded || k == EyeKind::Sleepy || k == EyeKind::Grumpy ||
+         k == EyeKind::SideEye;
+}
+
+// Moods the talking face can keep (their eyes and marks stay, the mouth talks).
+bool isMood(Expression e) {
+  switch (e) {
+    case Expression::Happy: case Expression::Excited: case Expression::Sad: case Expression::Worried:
+    case Expression::Curious: case Expression::Confused: case Expression::Playful: case Expression::Proud:
+    case Expression::Surprised: case Expression::Sleepy: case Expression::Love: case Expression::Starstruck:
+    case Expression::Dizzy: case Expression::Laughing: case Expression::Crying: case Expression::Annoyed:
+    case Expression::Shy: case Expression::Scared: case Expression::Mischievous: case Expression::Bored:
+    case Expression::Cool:
+      return true;
+    default:
+      return false;
+  }
+}
 
 bool drifts(Expression e) {
   return e == Expression::Idle || e == Expression::Blink || e == Expression::Listening ||
@@ -127,6 +145,64 @@ FacePose designFor(Expression e) {
       eyes(EyeKind::Cross, EyeKind::Cross);
       p.mouth = MouthKind::Wavy;
       break;
+    case Expression::Love:
+      eyes(EyeKind::Heart, EyeKind::Heart);
+      p.mouth = MouthKind::BigGrin;
+      p.marks = kMarkBlush | kMarkHearts;
+      break;
+    case Expression::Starstruck:
+      eyes(EyeKind::Star, EyeKind::Star);
+      p.mouth = MouthKind::BigO;
+      p.marks = kMarkSparkle;
+      break;
+    case Expression::Dizzy:
+      eyes(EyeKind::Spiral, EyeKind::Spiral);
+      p.mouth = MouthKind::Wavy;
+      p.marks = kMarkOrbit;
+      break;
+    case Expression::Laughing:
+      eyes(EyeKind::Squeeze, EyeKind::Squeeze);
+      p.mouth = MouthKind::BigGrin;
+      p.marks = kMarkJoyTears | kMarkBlush;
+      break;
+    case Expression::Crying:
+      eyes(EyeKind::Asleep, EyeKind::Asleep);
+      p.eye[0].dy = p.eye[1].dy = 1;
+      p.mouth = MouthKind::Wail;
+      p.marks = kMarkStreams | kMarkBrows;
+      break;
+    case Expression::Annoyed:
+      eyes(EyeKind::Grumpy, EyeKind::Grumpy);
+      p.mouth = MouthKind::Pout;
+      p.marks = kMarkVein;
+      break;
+    case Expression::Shy:
+      p.eye[0].dx = p.eye[1].dx = 3;   // looks away and down
+      p.eye[0].dy = p.eye[1].dy = 2;
+      p.mouth = MouthKind::ShySmile;
+      p.mouthDx = 3;
+      p.marks = kMarkBlush | kMarkShyLines;
+      break;
+    case Expression::Scared:
+      p.eye[0].scale = p.eye[1].scale = 0.7f;
+      p.mouth = MouthKind::Grit;
+      p.marks = kMarkBrows | kMarkSweat;
+      break;
+    case Expression::Mischievous:
+      eyes(EyeKind::SideEye, EyeKind::SideEye);
+      p.mouth = MouthKind::Smirk;
+      p.mouthDx = 2;
+      break;
+    case Expression::Bored:
+      eyes(EyeKind::Flat, EyeKind::Flat);
+      p.mouth = MouthKind::Flat;
+      p.mouthDx = -4;
+      p.marks = kMarkSigh;
+      break;
+    case Expression::Cool:
+      eyes(EyeKind::Shades, EyeKind::Shades);
+      p.mouth = MouthKind::Smirk;
+      break;
     default:
       break;
   }
@@ -208,6 +284,11 @@ FacePose FaceAnimator::update(const ViewModel& vm, uint32_t now) {
   }
 
   FacePose p = designFor(shownExpr_);
+  if (shownExpr_ == Expression::Speaking && isMood(vm.mood)) {
+    p = designFor(vm.mood);  // talk in the reply's mood: its eyes and marks, a talking mouth
+    p.mouth = MouthKind::Talk;
+    p.mouthDx = 0;
+  }
 
   // Natural blinking: every 2.8–5.2 s, sometimes twice.
   if (!blinkActive_ && reached(now, nextBlink_)) {
@@ -260,6 +341,9 @@ FacePose FaceAnimator::update(const ViewModel& vm, uint32_t now) {
   }
 
   if (shownExpr_ == Expression::Excited) p.bob = sinf(kTwoPi * (float)(now % 700) / 700.0f);
+  if (shownExpr_ == Expression::Laughing) p.bob = 1.5f * sinf(kTwoPi * (float)(now % 360) / 360.0f);
+  // A deliberate, regular tremble (not random jitter): 1 px left/right about 8 times a second.
+  if (shownExpr_ == Expression::Scared) p.shake = ((now / 60) % 2) ? 1.0f : -1.0f;
   if (shownExpr_ == Expression::Sleeping) p.bob = 0.8f * sinf(kTwoPi * (float)(now % 4000) / 4000.0f);
   p.level = vm.micActive ? vm.audioLevel : 0;
   p.phase = now;

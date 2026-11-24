@@ -31,6 +31,7 @@ struct GatewayReply {
   char longText[kMaxLongTextBytes + 1] = {0};  // full answer for text-only robots
   bool longRtl = false;
   Expression emotion = Expression::Happy;
+  uint32_t emotionMs = 0;  // how long the mood stays after speaking (0 = the robot's default)
   bool hasAudio = false;
   char lang[8] = {0};
 };
@@ -67,7 +68,7 @@ struct ConversationConfig {
   uint32_t followUpMs = 8000;       // LISTENING window after the robot answers
   uint32_t playbackStartGraceMs = 1500;  // time allowed for reply audio to begin
   uint32_t learningHoldMs = 20000;  // how long reply content (e.g. a letter) stays up
-  uint32_t emotionMs = 1800;        // reply emotion shown after speaking
+  uint32_t emotionMs = 1800;        // reply emotion shown after speaking (unless the reply sets it)
   uint32_t textIntroMs = 1200;      // happy face before the answer text starts scrolling
   // Robot WITHOUT a speaker: answers scroll as full text, subtitles accompany speech.
   // Robot WITH a speaker (BMO style): the face does the talking — no long text, no subtitles;

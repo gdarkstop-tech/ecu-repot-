@@ -10,7 +10,9 @@ const char* const kStateNames[] = {"STARTUP",  "IDLE",     "LISTENING", "PROCESS
                                    "SPEAKING", "LEARNING", "MUTED",     "ERROR"};
 const char* const kExprNames[] = {"idle",    "happy",   "listening", "thinking", "speaking", "blink",   "sleeping",
                                   "surprised", "sad",   "muted",     "error",    "excited",  "curious", "confused",
-                                  "worried", "playful", "proud",     "offline",  "sleepy",   "boot"};
+                                  "worried", "playful", "proud",     "offline",  "sleepy",   "love",
+                                  "starstruck", "dizzy", "laughing", "crying", "annoyed", "shy",   "scared",
+                                  "mischievous", "bored", "cool",  "boot"};
 const char* const kKindNames[] = {"none", "letter", "number", "math", "word"};
 
 static_assert(sizeof(kStateNames) / sizeof(kStateNames[0]) == (size_t)RobotState::kCount, "state names");

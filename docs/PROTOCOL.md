@@ -134,8 +134,13 @@ turns starts fresh.
 - Arabic `oled_text`, `value` and `caption` are **pre-shaped presentation forms in visual order**
   (`rtl: true`); the robot has no shaping engine. `oled_text` ≤ 150 bytes, `value` ≤ 32 bytes.
 - `emotion` ∈ happy, sad, surprised, idle, thinking, excited, proud, worried, curious, confused,
-  playful, sleepy (firmware < 0.5 shows "happy" for the newer ones; system faces such as muted,
-  error or offline are never accepted from the gateway).
+  playful, sleepy, love, starstruck, dizzy, laughing, crying, annoyed, shy, scared, mischievous,
+  bored, cool (older firmware shows "happy" for the ones it does not know; system faces such as
+  muted, error, offline, speaking or sleeping are never accepted from the gateway). While the
+  robot speaks it keeps the mood's eyes and marks with a talking mouth; afterwards it shows the
+  whole face.
+- `emotion_ms` (optional, firmware ≥ 0.6): how long that face stays after speaking, 0–10000 ms
+  (clamped by the robot; default 1800). Reactions such as "make a laughing face" send 4000.
 - The robot accepts `audio.path` only as a relative `/v1/...` path (≤ 1023 characters of
   `[A-Za-z0-9/_.-]`, no `..`) on the same gateway (so its token can never be sent elsewhere),
   `format` = `pcm_s16le`, `sample_rate` ∈ 8000/16000/22050/24000. `bytes` / `duration_ms` are

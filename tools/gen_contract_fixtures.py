@@ -40,6 +40,8 @@ def main() -> None:
         "alphabet_ar": "علمني الحروف",
         "story_ar": "احك لي قصة",
         "vocab_ar": "teach me arabic words",
+        "reaction_en": "make a laughing face",
+        "reaction_ar": "يا غبي",
     }
     for name, text in cases.items():
         r = c.post("/v1/turns/text", headers=h, json={"text": text})

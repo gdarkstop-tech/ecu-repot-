@@ -25,6 +25,10 @@ struct ViewModel {
   // One-shot blink trigger: renderer blinks whenever this counter changes.
   uint32_t blinkSeq = 0;
 
+  // The reply's mood while SPEAKING: the face keeps that mood's eyes and marks and only the
+  // mouth talks (an annoyed BMO stays annoyed while it says so). Idle = plain talking face.
+  Expression mood = Expression::Idle;
+
   // Learning content
   ContentKind contentKind = ContentKind::None;
   const char* contentValue = "";

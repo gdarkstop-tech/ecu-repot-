@@ -78,6 +78,10 @@ class Robot {
   TransitionResult requestState(RobotState s, uint32_t now, uint32_t timeoutMs = 0);
   void raiseError(const char* code, bool recoverable, uint32_t now);
   void setExpressionOverride(Expression e, uint32_t now, uint32_t ms);
+  // Mood kept by the talking face while SPEAKING (Idle = plain talking face).
+  void clearExpressionOverride() { overrideActive_ = false; }
+  // The reply's mood while SPEAKING: the talking face keeps that mood's eyes and marks.
+  void setMood(Expression e) { mood_ = e; }
   void blink() { blinkSeq_++; }
   void showContent(ContentKind k, const char* value, const char* caption, bool rtl, uint32_t now,
                    uint32_t ms);
@@ -115,6 +119,7 @@ class Robot {
   // presentation state
   bool overrideActive_ = false;
   Expression override_ = Expression::Idle;
+  Expression mood_ = Expression::Idle;
   uint32_t overrideUntil_ = 0;
   uint32_t blinkSeq_ = 0;
 

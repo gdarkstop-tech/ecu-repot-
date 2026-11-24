@@ -7,9 +7,9 @@
 // mouth that follows the speech level, a blink on every expression change. No randomness that
 // could look jittery: everything is a pure function of a seeded schedule and time.
 //
-// The painter (robot_ui/face_painter) maps the pose to pixels. Colours are semantic roles
-// (Screen / Feature / Accent): the SH1106 maps them to lit / dark / dithered pixels; a future
-// colour display can map the same roles to BMO's palette without touching this file.
+// The painter (face_canvas.h) draws the pose on any Surface with semantic tones (screen, ink,
+// lip, mouth, teeth, tongue, blush...): the SH1106 maps them to lit / dark / dithered pixels,
+// a colour display (and the colour previews) to BMO's own palette — the same drawing code.
 #pragma once
 #include <stdint.h>
 
@@ -17,8 +17,6 @@
 #include "view_model.h"
 
 namespace robot {
-
-enum class Role : uint8_t { Screen, Feature, Accent };
 
 enum class EyeKind : uint8_t {
   Dot,      // BMO's oval dot
@@ -29,6 +27,14 @@ enum class EyeKind : uint8_t {
   Asleep,   // relaxed downward curve (sleeping)
   Cross,    // x  error
   Squint,   // thin raised line (one confused eye)
+  Heart,    // love
+  Star,     // starstruck
+  Spiral,   // dizzy (turns)
+  Squeeze,  // > <  laughing hard
+  Grumpy,   // dot under a lid slanting down to the nose: annoyed
+  SideEye,  // half-lidded, looking sideways: mischievous
+  Flat,     // -_-  bored
+  Shades,   // sunglasses lens: cool
   kCount
 };
 
@@ -45,11 +51,15 @@ enum class MouthKind : uint8_t {
   Tongue,   // smile with the tongue out
   Zipper,   // muted
   Talk,     // speaking: shape follows FacePose::mouthOpen
+  Wail,     // crying: upside-down open mouth
+  Pout,     // annoyed: small tight frown
+  ShySmile, // a tiny smile
+  Grit,     // scared: clenched teeth
   kCount
 };
 
 // Small marks around the face (bit flags).
-enum Mark : uint16_t {
+enum Mark : uint32_t {
   kMarkBlush = 1 << 0,
   kMarkSweat = 1 << 1,
   kMarkQuestion = 1 << 2,
@@ -62,6 +72,13 @@ enum Mark : uint16_t {
   kMarkExclaim = 1 << 9,
   kMarkWifiOff = 1 << 10,
   kMarkMicOff = 1 << 11,
+  kMarkVein = 1 << 12,      // anger mark (annoyed)
+  kMarkHearts = 1 << 13,    // little hearts floating up (love)
+  kMarkOrbit = 1 << 14,     // stars circling the head (dizzy)
+  kMarkStreams = 1 << 15,   // tear streams (crying)
+  kMarkJoyTears = 1 << 16,  // tears of joy (laughing)
+  kMarkShyLines = 1 << 17,  // /// on the cheeks (shy)
+  kMarkSigh = 1 << 18,      // a puff of air (bored)
 };
 
 struct EyePose {
@@ -76,8 +93,9 @@ struct FacePose {
   MouthKind mouth = MouthKind::Smile;
   float mouthOpen = 0;   // 0..1, used by Talk (quantised to 4 steps)
   float mouthDx = 0;
-  uint16_t marks = 0;
+  uint32_t marks = 0;
   float bob = 0;         // whole-face vertical offset (px)
+  float shake = 0;       // whole-face horizontal offset (px): a scared tremble
   bool darkScreen = false;  // sleeping: the screen dims (also protects the OLED)
   uint8_t level = 0;     // 0..100 microphone level (sound waves)
   uint32_t phase = 0;    // ms clock for mark animations (Zz rise, dots, sparkles)

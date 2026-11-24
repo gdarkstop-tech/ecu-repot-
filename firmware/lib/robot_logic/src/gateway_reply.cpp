@@ -31,13 +31,16 @@ bool isSafeContextToken(const char* t, size_t cap) {
   return true;
 }
 
-// Moods a reply may ask for. System faces (speaking, listening, muted, error, offline...) are
-// decided by the robot itself, never by the gateway.
+// Moods a reply may ask for. System faces (speaking, listening, muted, error, offline, boot...)
+// are decided by the robot itself, never by the gateway.
 static bool allowedEmotion(Expression e) {
   switch (e) {
     case Expression::Happy: case Expression::Sad: case Expression::Surprised: case Expression::Idle:
     case Expression::Thinking: case Expression::Excited: case Expression::Proud: case Expression::Worried:
     case Expression::Curious: case Expression::Confused: case Expression::Playful: case Expression::Sleepy:
+    case Expression::Love: case Expression::Starstruck: case Expression::Dizzy: case Expression::Laughing:
+    case Expression::Crying: case Expression::Annoyed: case Expression::Shy: case Expression::Scared:
+    case Expression::Mischievous: case Expression::Bored: case Expression::Cool:
       return true;
     default:
       return false;
@@ -75,6 +78,10 @@ bool parseGatewayReply(const char* body, size_t len, GatewayReply& out, char* au
   }
   Expression e;
   r.emotion = (parseExpression(doc["emotion"] | "happy", e) && allowedEmotion(e)) ? e : Expression::Happy;
+  // Optional: how long the mood stays after speaking (a reaction the child asked for lingers).
+  // Bounded so a reply can never freeze the face.
+  int64_t emotionMs = doc["emotion_ms"] | (int64_t)0;
+  r.emotionMs = emotionMs < 0 ? 0 : (emotionMs > kMaxEmotionMs ? kMaxEmotionMs : (uint32_t)emotionMs);
 
   if (audioPath && pathCap) audioPath[0] = 0;
   audioRate = 0;

@@ -26,6 +26,7 @@
 #include <string>
 #include <vector>
 
+#include "face_canvas.h"
 #include "face_renderer.h"
 #include "line_framer.h"
 #include "robot.h"
@@ -63,7 +64,7 @@ struct SimPlatform : IRobotPlatform {
     fflush(stdout);
   }
   void getInfo(DeviceInfo& i) override {
-    i.fw = "sim-0.5.0";
+    i.fw = "sim-0.6.0";
     i.board = "host-simulator";
     i.oledOk = true;
     i.oledAddr = 0x3C;
@@ -76,6 +77,8 @@ struct SimPlatform : IRobotPlatform {
 };
 
 // ------------------------------------------------------------------ gallery
+constexpr int kColourScale = 3;
+constexpr int kColourW = 128 * kColourScale, kColourH = 64 * kColourScale;
 struct Scene {
   const char* name;
   std::vector<std::string> commands;  // debug lines sent at scene start
@@ -120,6 +123,17 @@ void runGallery(const char* dir) {
       {"playful", {"{\"cmd\":\"face\",\"expr\":\"playful\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
       {"proud", {"{\"cmd\":\"face\",\"expr\":\"proud\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
       {"sleepy", {"{\"cmd\":\"face\",\"expr\":\"sleepy\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
+      {"love", {"{\"cmd\":\"face\",\"expr\":\"love\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
+      {"starstruck", {"{\"cmd\":\"face\",\"expr\":\"starstruck\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
+      {"dizzy", {"{\"cmd\":\"face\",\"expr\":\"dizzy\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
+      {"laughing", {"{\"cmd\":\"face\",\"expr\":\"laughing\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
+      {"crying", {"{\"cmd\":\"face\",\"expr\":\"crying\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
+      {"annoyed", {"{\"cmd\":\"face\",\"expr\":\"annoyed\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
+      {"shy", {"{\"cmd\":\"face\",\"expr\":\"shy\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
+      {"scared", {"{\"cmd\":\"face\",\"expr\":\"scared\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
+      {"mischievous", {"{\"cmd\":\"face\",\"expr\":\"mischievous\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
+      {"bored", {"{\"cmd\":\"face\",\"expr\":\"bored\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
+      {"cool", {"{\"cmd\":\"face\",\"expr\":\"cool\",\"ms\":9000}"}, 2500, true, 0, false, false, 0},
       {"sleeping", {}, 4000, true, 0, false, false, 200000},
       {"muted", {}, 2500, false, 0, false, false, 0},
       {"error", {}, 2500, true, 0, false, false, 0},
@@ -178,15 +192,31 @@ void runGallery(const char* dir) {
     uint8_t frame[64 * 16];
     uint32_t start = t;
     int frames = 0;
+    // Colour preview (BMO's palette, 3x) of the same face, painted by the same FacePainter.
+    static const char* const kNoColour[] = {"learning", "text_", "reading", "speaking_subtitle", "boot"};
+    bool colour = true;
+    for (const char* prefix : kNoColour)
+      if (strncmp(sc.name, prefix, strlen(prefix)) == 0) colour = false;
+    FILE* cf = nullptr;
+    if (colour) cf = fopen((std::string(dir) + "/" + sc.name + ".rgb").c_str(), "wb");
+    static uint8_t rgb[kColourW * kColourH * 3];
     for (; t < start + sc.durationMs; t += 33) {  // ~30 fps, same as the firmware
       robot.setMicActivity(sc.micActive, sc.micLevel ? (uint8_t)(sc.micLevel * (0.6 + 0.4 * ((t / 90) % 3) / 2.0)) : 0);
       robot.tick(t);
       face.render(&g, robot.view(t), t);
       toRowMajor(&g, frame);
       fwrite(frame, 1, sizeof(frame), f);
+      if (cf && frames % 2 == 0) {
+        RgbSurface surface(rgb, kColourW, kColourH);
+        surface.setDim(face.pose().darkScreen);
+        surface.clear();
+        FacePainter(surface, kColourScale).draw(face.pose());
+        fwrite(rgb, 1, sizeof(rgb), cf);
+      }
       frames++;
     }
     fclose(f);
+    if (cf) fclose(cf);
     fprintf(stderr, "scene %-22s %3d frames\n", sc.name, frames);
   }
 }

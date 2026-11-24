@@ -379,7 +379,7 @@ def step_robot(report: Report, link: RobotLink, args) -> None:
     link.drain()
     link.request("selftest", 2)
     names = []
-    t_end = time.monotonic() + 100  # 22 faces and screens, ~2.6 s each
+    t_end = time.monotonic() + 150  # 33 faces and screens, ~2.6 s each
     while time.monotonic() < t_end:
         d = link.wait_for(lambda d: d.get("evt") == "selftest", 5)
         if not d:
@@ -388,11 +388,13 @@ def step_robot(report: Report, link: RobotLink, args) -> None:
             break
         names.append(d.get("name"))
         print(f"      showing: {d.get('name')}")
-    report.add(G, "Selftest ran all expressions", PASS if len(names) >= 22 else FAIL, ", ".join(names))
+    report.add(G, "Selftest ran all expressions", PASS if len(names) >= 33 else FAIL, ", ".join(names))
     if not args.target_sim:
         human(report, "OLED", "BMO faces animate smoothly", "On a light screen with dark features, did you see the "
               "faces (idle, blink, happy, listening, thinking, speaking, excited, curious, confused, surprised, sad, "
-              "worried, playful, proud, sleepy, sleeping on a dark screen, muted with a zipped mouth, offline, error), "
+              "worried, playful, proud, sleepy, sleeping on a dark screen, muted with a zipped mouth, offline, error, "
+              "love with heart eyes, starstruck, laughing, shy, cool sunglasses, mischievous, annoyed, bored, scared, "
+              "crying, dizzy), "
               "then letter/number/sum/word cards — soft blinking, no flicker?", args)
         link.request("show", 2, kind="letter", value="ب", caption="ﺔﻄﺒ", rtl=True, ms=6000)
         human(report, "OLED", "Arabic renders", "Is a large Arabic letter (ب) shown with an Arabic word below it?", args)

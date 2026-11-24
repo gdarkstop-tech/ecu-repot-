@@ -240,7 +240,9 @@ void test_groq_replies_speaker_and_text_robots() {
 }
 
 void test_new_reply_emotions_and_system_faces_refused() {
-  const char* ok[] = {"excited", "proud", "worried", "curious", "confused", "playful", "sleepy"};
+  const char* ok[] = {"excited", "proud",  "worried",  "curious", "confused", "playful",     "sleepy", "love",
+                      "starstruck", "dizzy", "laughing", "crying", "annoyed", "shy", "scared", "mischievous",
+                      "bored", "cool"};
   for (const char* e : ok) {
     char body[96];
     snprintf(body, sizeof(body), "{\"display\":{},\"emotion\":\"%s\"}", e);
@@ -254,6 +256,26 @@ void test_new_reply_emotions_and_system_faces_refused() {
     snprintf(body, sizeof(body), "{\"display\":{},\"emotion\":\"%s\"}", e);
     TEST_ASSERT_EQUAL_MESSAGE((int)Expression::Happy, (int)parse(body).r.emotion, e);
   }
+}
+
+void test_reactions_from_the_real_gateway() {
+  Parsed en = parse(fixture("reaction_en.json"));
+  TEST_ASSERT_TRUE(en.ok);
+  TEST_ASSERT_EQUAL((int)Expression::Laughing, (int)en.r.emotion);
+  TEST_ASSERT_EQUAL_UINT32(4000, en.r.emotionMs);
+  TEST_ASSERT_TRUE(en.r.hasAudio);
+  Parsed ar = parse(fixture("reaction_ar.json"));
+  TEST_ASSERT_TRUE(ar.ok);
+  TEST_ASSERT_EQUAL((int)Expression::Annoyed, (int)ar.r.emotion);
+  TEST_ASSERT_TRUE(ar.r.rtl && utf8IsValid(ar.r.oledText));
+}
+
+void test_emotion_ms_is_optional_and_bounded() {
+  TEST_ASSERT_EQUAL_UINT32(0, parse(R"({"display":{},"emotion":"annoyed"})").r.emotionMs);
+  TEST_ASSERT_EQUAL_UINT32(4000, parse(R"({"display":{},"emotion":"annoyed","emotion_ms":4000})").r.emotionMs);
+  TEST_ASSERT_EQUAL_UINT32(kMaxEmotionMs, parse(R"({"display":{},"emotion_ms":99999999})").r.emotionMs);
+  TEST_ASSERT_EQUAL_UINT32(0, parse(R"({"display":{},"emotion_ms":-5})").r.emotionMs);
+  TEST_ASSERT_EQUAL_UINT32(0, parse(R"({"display":{},"emotion_ms":"long"})").r.emotionMs);
 }
 
 int main() {
@@ -273,5 +295,7 @@ int main() {
   RUN_TEST(test_hostile_context_tokens_clear_the_stored_one);
   RUN_TEST(test_groq_replies_speaker_and_text_robots);
   RUN_TEST(test_new_reply_emotions_and_system_faces_refused);
+  RUN_TEST(test_emotion_ms_is_optional_and_bounded);
+  RUN_TEST(test_reactions_from_the_real_gateway);
   return UNITY_END();
 }

@@ -41,6 +41,17 @@ enum class Expression : uint8_t {
   Proud,      // smug: lidded eyes, smirk
   Offline,
   Sleepy,     // drowsy, half-closed eyes
+  Love,       // heart eyes, floating hearts
+  Starstruck, // star eyes, sparkles
+  Dizzy,      // spiral eyes, stars circling
+  Laughing,   // > < eyes, big laugh, tears of joy
+  Crying,     // closed eyes, tear streams, wailing mouth
+  Annoyed,    // grumpy lids, pout, anger mark (child-friendly "hmph!")
+  Shy,        // looks away, blush, shy lines
+  Scared,     // tiny eyes, chattering teeth, trembles
+  Mischievous,// side-eye and a sly smirk
+  Bored,      // flat half-closed eyes, sigh
+  Cool,       // sunglasses with a glint
   Boot,
   kCount
 };

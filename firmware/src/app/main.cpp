@@ -29,7 +29,7 @@
 #include "vad.h"
 
 #ifndef ROBOT_FW_VERSION
-#define ROBOT_FW_VERSION "0.5.0"
+#define ROBOT_FW_VERSION "0.6.0"
 #endif
 
 using namespace robot;

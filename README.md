@@ -17,13 +17,20 @@ import settings, environment variables, `/healthz` check (beginner steps).
 
 Code: https://github.com/gdarkstop-tech/ecu-repot- · branch `claude/vigilant-gauss-lvs43y`
 
-**The face is BMO-inspired** (light screen, dark dot eyes, simple mouth; 20 faces, all
-monochrome): [docs/FACE_DESIGN.md](docs/FACE_DESIGN.md)
+**The face is BMO's**: round dot eyes and an open green mouth with white teeth and a tongue,
+31 expressions (love, starstruck, laughing, crying, annoyed, shy, scared, cool, dizzy...). Say
+"make a laughing face" / "اعمل وش ضاحك", call it a rude name, or tell it you love it, and it
+reacts: [docs/FACE_DESIGN.md](docs/FACE_DESIGN.md)
 
-![BMO-inspired faces rendered by the firmware's own drawing code](docs/media/faces.png)
+![BMO faces in colour](docs/media/faces_color.png)
 
-*Frames above are rendered on a PC by the firmware's renderer through the real U8g2 library
-(`firmware/sim`). They are not photos of the physical display. All screens, including learning
+*Colour: the same drawing code with BMO's palette — what a colour display would show. The
+SH1106 is one-colour, so on the robot the same faces are drawn in black on a lit screen:*
+
+![The same faces on the 1-bit SH1106](docs/media/faces.png)
+
+*All frames are rendered on a PC by the firmware's own code (mono through the real U8g2 library,
+`firmware/sim`). They are not photos of the physical display. All screens, including learning
 cards: [docs/media/oled_gallery.png](docs/media/oled_gallery.png).*
 
 ## Status
@@ -31,7 +38,7 @@ cards: [docs/media/oled_gallery.png](docs/media/oled_gallery.png).*
 | | |
 |---|---|
 | ✅ Builds | `diag` and `robot` firmware compile for ESP32-S3 N16R8 |
-| 🟡 Tested without the physical robot | 93 firmware unit tests, 109 gateway tests (Groq API mocked), simulator protocol checks, gateway over real HTTP, Vercel build (local CLI) |
+| 🟡 Tested without the physical robot | 114 firmware unit tests, 215 gateway tests (Groq API mocked), simulator protocol checks, gateway over real HTTP, Vercel build (local CLI) |
 | ⬜ Needs your deployment | Real Groq answers and Orpheus voice with your key: [docs/VERCEL_SETUP.md](docs/VERCEL_SETUP.md) Part G |
 | ⬜ Not yet on hardware | Flashing, OLED, audio, Wi-Fi, standalone conversation |
 

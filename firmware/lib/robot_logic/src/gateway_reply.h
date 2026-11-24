@@ -20,6 +20,7 @@ namespace robot {
 constexpr size_t kMaxReplyBytes = 12288;    // whole JSON reply
 constexpr size_t kMaxAudioPathLen = 1023;   // serverless gateways put a sealed ticket in the path
 constexpr size_t kMaxContextLen = 3000;     // the gateway keeps its tokens <= 2400 characters
+constexpr uint32_t kMaxEmotionMs = 10000;   // a reply mood never holds the face longer than this
 
 // What to do with the robot's stored context after a reply.
 enum class ContextUpdate : uint8_t {

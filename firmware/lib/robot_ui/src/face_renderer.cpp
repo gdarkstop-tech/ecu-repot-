@@ -27,6 +27,21 @@ const uint8_t* pickFont(u8g2_t* g, const uint8_t* const* fonts, int n, const cha
   return fonts[n - 1];
 }
 
+// The SH1106 as a face Surface: tones become ink (1) / screen (0) / half-tone pixels.
+class U8g2Surface : public Surface {
+ public:
+  explicit U8g2Surface(u8g2_t* g) : g_(g) {}
+  int width() const override { return FaceRenderer::kWidth; }
+  int height() const override { return FaceRenderer::kHeight; }
+  void plot(int x, int y, Tone t) override {
+    u8g2_SetDrawColor(g_, monoValue(t, x, y));
+    u8g2_DrawPixel(g_, (u8g2_uint_t)x, (u8g2_uint_t)y);
+  }
+
+ private:
+  u8g2_t* g_;
+};
+
 // Copies a UTF-8 range into a NUL-terminated buffer (for width measurement).
 void copyRange(char* dst, size_t cap, const char* src, size_t len) {
   if (len >= cap) len = cap - 1;
@@ -81,7 +96,9 @@ void FaceRenderer::finish(u8g2_t* g, bool darkScreen) {
 
 // ------------------------------------------------------------------ face
 void FaceRenderer::drawFace(u8g2_t* g, const ViewModel& vm, uint32_t now) {
-  painter_.draw(g, pose_, layout_);
+  U8g2Surface surface(g);
+  FacePainter(surface).draw(pose_, layout_);
+  u8g2_SetDrawColor(g, 1);
   if (vm.expression == Expression::Error) {
     char line[48];
     snprintf(line, sizeof(line), "ERR %s", vm.errorCode[0] ? vm.errorCode : "unknown");
@@ -122,7 +139,9 @@ void FaceRenderer::drawBoot(u8g2_t* g, const ViewModel& vm, uint32_t now) {
     p.eye[0].open = p.eye[1].open = open;
     p.mouth = t < 1250 ? MouthKind::Smile : MouthKind::Grin;  // then BMO's open mouth
     p.marks = 0;
-    painter_.draw(g, p, layout_);
+    U8g2Surface surface(g);
+    FacePainter(surface).draw(p, layout_);
+    u8g2_SetDrawColor(g, 1);
     for (int i = 0; i < 3; i++) {  // loading blocks
       int x = 55 + i * 7;
       bool filled = t >= 1250 + (uint32_t)i * 300;
@@ -140,9 +159,12 @@ void FaceRenderer::drawStatusIcons(u8g2_t* g, const ViewModel& vm) {
   if (vm.state == RobotState::Startup) return;
   u8g2_SetDrawColor(g, 1);
   // Muted indicator in a corner whenever the muted face (zipped mouth + icon) is not showing.
-  if (vm.muted && !(pose_.marks & kMarkMicOff)) MonoFacePainter::micOffIcon(g, 114, 1);
+  U8g2Surface surface(g);
+  FacePainter painter(surface);
+  if (vm.muted && !(pose_.marks & kMarkMicOff)) painter.micOffIcon(114, 1);
   if ((vm.offline || (vm.wifiConfigured && !vm.wifiConnected)) && !(pose_.marks & kMarkWifiOff))
-    MonoFacePainter::wifiOffIcon(g, 3, 2);
+    painter.wifiOffIcon(3, 2);
+  u8g2_SetDrawColor(g, 1);
 }
 
 // ------------------------------------------------------------------ learning content

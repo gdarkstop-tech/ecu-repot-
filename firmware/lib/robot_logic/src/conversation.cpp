@@ -64,7 +64,9 @@ void Conversation::onMicFrame(const int16_t* pcm, size_t n, uint32_t now) {
       phase_ = Phase::Capturing;
       phaseSince_ = now;
       robot_.stateMachine().noteActivity(now);
-      // Hold LISTENING while the child is talking (no timeout mid-sentence).
+      // Hold LISTENING while the child is talking (no timeout mid-sentence); a lingering
+      // reaction face gives way to the listening face.
+      robot_.clearExpressionOverride();
       robot_.requestState(RobotState::Listening, now, UINT32_MAX);
       emitTurnEvent("speech_start");
       break;
@@ -164,6 +166,7 @@ void Conversation::tick(uint32_t now) {
         return;
       }
       emitTurnEvent("reply");
+      robot_.setMood(reply_.emotion);  // talk with the mood's eyes (laughing, annoyed, shy...)
       phase_ = Phase::Speaking;
       phaseSince_ = now;
       audioSeen_ = false;
@@ -241,6 +244,7 @@ void Conversation::startReading(uint32_t now) {
 void Conversation::finishSpeaking(uint32_t now) {
   phase_ = Phase::Tail;
   phaseSince_ = now;
+  robot_.setMood(Expression::Idle);
   robot_.setMicActivity(false, 0);
   emitTurnEvent("spoken");
 }
@@ -259,7 +263,7 @@ void Conversation::rearm(uint32_t now) {
     robot_.requestState(RobotState::Idle, now);
   }
   if (!reply_.ignore && reply_.emotion != Expression::Speaking) {
-    robot_.setExpressionOverride(reply_.emotion, now, cfg_.emotionMs);
+    robot_.setExpressionOverride(reply_.emotion, now, reply_.emotionMs ? reply_.emotionMs : cfg_.emotionMs);
   }
   reply_ = GatewayReply();
 }

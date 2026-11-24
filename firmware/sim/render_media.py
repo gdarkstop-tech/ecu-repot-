@@ -46,8 +46,44 @@ def frame_to_image(frame: bytes, scale: int = SCALE) -> Image.Image:
 
 # The BMO-inspired faces, in the order of the design list (docs/FACE_DESIGN.md).
 FACE_SCENES = ["idle", "blink", "happy", "excited", "listening", "thinking", "speaking", "sleepy", "sleeping",
-               "curious", "confused", "sad", "worried", "playful", "proud", "surprised", "muted", "offline",
-               "error", "boot"]
+               "curious", "confused", "sad", "worried", "playful", "proud", "surprised", "love", "starstruck",
+               "dizzy", "laughing", "crying", "annoyed", "shy", "scared", "mischievous", "bored", "cool", "muted",
+               "offline", "error", "boot"]
+CW, CH = 128 * 3, 64 * 3  # colour previews from the simulator (BMO palette, 3x)
+
+
+def colour_frames(path: Path) -> list[Image.Image]:
+    data = path.read_bytes()
+    n = CW * CH * 3
+    return [Image.frombytes("RGB", (CW, CH), data[i:i + n]) for i in range(0, len(data) - n + 1, n)]
+
+
+def colour_media(src: Path, out: Path) -> None:
+    """faces_color.png + <name>_color.gif: the same faces in BMO's colours (what a colour display shows)."""
+    tiles = []
+    for name in FACE_SCENES:
+        path = src / f"{name}.rgb"
+        if not path.exists():
+            continue
+        frames = colour_frames(path)
+        if not frames:
+            continue
+        frames[0].save(out / f"{name}_color.gif", save_all=True, append_images=frames[1:], duration=66, loop=0,
+                       optimize=True)
+        pick = frames[min(len(frames) - 1, len(frames) // 2)]
+        if name == "speaking":
+            pick = max(frames, key=lambda f: sum(f.convert("L").histogram()[:120]))  # widest mouth
+        tiles.append((name, pick))
+    cols, label_h = 4, 22
+    rows = (len(tiles) + cols - 1) // cols
+    sheet = Image.new("RGB", (cols * (CW + 12) + 12, rows * (CH + label_h + 12) + 12), (30, 33, 40))
+    d = ImageDraw.Draw(sheet)
+    for i, (name, tile) in enumerate(tiles):
+        cx = 12 + (i % cols) * (CW + 12)
+        cy = 12 + (i // cols) * (CH + label_h + 12)
+        sheet.paste(tile, (cx, cy + label_h))
+        d.text((cx + 2, cy + 4), name, fill=(200, 210, 225))
+    sheet.save(out / "faces_color.png")
 
 
 def write_sheet(tiles, path, order=None, cols=4) -> None:
@@ -100,6 +136,7 @@ def main() -> int:
     sheet.save(out / "oled_gallery.png")
     write_sheet([(n, im) for n, im in tiles if n in FACE_SCENES], out / "faces.png",
                 order=FACE_SCENES)
+    colour_media(src, out)
     print(f"wrote {len(tiles)} scenes to {out}")
     return 0
 

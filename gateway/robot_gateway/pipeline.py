@@ -17,17 +17,22 @@ from .config import Settings
 from .providers.base import ChatMessage, LanguageModel, ProviderError, SpeechToText
 from .providers.mock import DEMO_PREFIX
 from .audio import voiced_seconds
+from .reactions import REACTION_MS, react
 from .safety import check_input, check_output, redact_personal
-from .textutil import detect_language, first_sentence, is_probable_hallucination, strip_for_speech, to_oled
+from .textutil import (contains_answer, detect_language, first_sentence, is_probable_hallucination, strip_for_speech,
+                       to_oled)
 from .tutor.engine import Session, Tutor, TutorReply, level_for_age
 from .tutor.mathcheck import correct_claims
 
 log = logging.getLogger("gateway.turn")
 
-# Faces the robot can show for a reply (firmware >= 0.5 draws all of them in its BMO-inspired style;
-# older firmware shows "happy" for the ones it does not know).
+# Faces the robot can show for a reply (firmware >= 0.6 draws all of them in its BMO-inspired style;
+# older firmware shows "happy" for the ones it does not know). System faces — speaking, listening,
+# muted, offline, error, sleeping — are the robot's own decision and never come from here.
 ALLOWED_EMOTIONS = {"happy", "sad", "surprised", "idle", "thinking", "excited", "proud", "worried", "curious",
-                    "confused", "playful", "sleepy"}
+                    "confused", "playful", "sleepy", "love", "starstruck", "dizzy", "laughing", "crying",
+                    "annoyed", "shy", "scared", "mischievous", "bored", "cool"}
+MAX_EMOTION_MS = 10000  # the firmware caps it at the same value
 
 SYSTEM_PROMPT = """You are {name}, a friendly and patient learning robot for young children.
 You speak out loud through a small speaker, and your words also scroll on a tiny screen.
@@ -182,6 +187,8 @@ class TurnPipeline:
             "timing": {"stt_ms": stt_ms, "think_ms": think_ms, "tts_ms": tts_ms,
                        "total_ms": int((time.monotonic() - t0) * 1000)},
         }
+        if reply.emotion_ms:
+            body["emotion_ms"] = max(0, min(MAX_EMOTION_MS, int(reply.emotion_ms)))
         fields = {"outcome": "reply", "source": reply.source, "lang": reply.lang, "mode": session.mode,
                   "output": output, "audio_s": audio_s, "stt_ms": stt_ms, "think_ms": think_ms,
                   "tts_ms": tts_ms, "warnings": warnings, **usage}
@@ -208,13 +215,25 @@ class TurnPipeline:
             return TutorReply(verdict.reply(lang), lang, emotion="worried" if verdict.category == "distress" else "idle",
                               source="safety")
 
-        # 3) Deterministic tutor: modes, answers, arithmetic.
+        # 3) Personality: reactions to rude words, compliments, laughter, and faces on command
+        #    ("make a laughing face", "اعمل وش زعلان"). Never when the words answer the current
+        #    practice item, and never touching it: the drill simply waits for the next answer.
+        pending = session.pending
+        if not (pending is not None and pending.accepted and contains_answer(text, pending.accepted)):
+            r = react(text, lang, session.rng)
+            if r is not None:
+                if usage is not None:
+                    usage["reaction"] = r.kind  # the kind only, never the words
+                return TutorReply(r.text, lang, emotion=r.emotion, oled=r.oled, source="reaction",
+                                  emotion_ms=REACTION_MS)
+
+        # 4) Deterministic tutor: modes, answers, arithmetic.
         session.level = session.level if session.mode != "chat" else level_for_age(age)
         tutored = self.tutor.handle(session, text, lang, age)
         if tutored is not None:
             return tutored
 
-        # 4) Open question: language model (or demo answers when no model is configured).
+        # 5) Open question: language model (or demo answers when no model is configured).
         if self.llm.name == "mock":
             return self.tutor.demo_answer(text, lang)
         system = SYSTEM_PROMPT.format(name=self.s.robot_name, language=LANG_NAMES[lang], age=age)

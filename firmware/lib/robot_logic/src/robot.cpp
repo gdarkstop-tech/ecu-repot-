@@ -44,6 +44,17 @@ const SelftestStep kSelftest[] = {
     {"muted", Expression::Muted, ContentKind::None, "", "", 2500},
     {"offline", Expression::Offline, ContentKind::None, "", "", 2500},
     {"error", Expression::Error, ContentKind::None, "", "", 2500},
+    {"love", Expression::Love, ContentKind::None, "", "", 2500},
+    {"starstruck", Expression::Starstruck, ContentKind::None, "", "", 2500},
+    {"laughing", Expression::Laughing, ContentKind::None, "", "", 2500},
+    {"shy", Expression::Shy, ContentKind::None, "", "", 2500},
+    {"cool", Expression::Cool, ContentKind::None, "", "", 2500},
+    {"mischievous", Expression::Mischievous, ContentKind::None, "", "", 2500},
+    {"annoyed", Expression::Annoyed, ContentKind::None, "", "", 2500},
+    {"bored", Expression::Bored, ContentKind::None, "", "", 2500},
+    {"scared", Expression::Scared, ContentKind::None, "", "", 2500},
+    {"crying", Expression::Crying, ContentKind::None, "", "", 2500},
+    {"dizzy", Expression::Dizzy, ContentKind::None, "", "", 2500},
     {"letter", Expression::Idle, ContentKind::Letter, "A", "Apple", 2500},
     {"number", Expression::Idle, ContentKind::Number, "42", "forty-two", 2500},
     {"math", Expression::Idle, ContentKind::Math, "7+5=12", "", 2500},
@@ -458,6 +469,7 @@ const ViewModel& Robot::view(uint32_t now) {
   vm_.overlayText = overlay_;
   vm_.overlayRtl = overlayRtl_;
   vm_.marquee = marquee_;
+  vm_.mood = vm_.state == RobotState::Speaking ? mood_ : Expression::Idle;
   vm_.marqueeRtl = marqueeRtl_;
   vm_.marqueeSince = marqueeSince_;
   vm_.errorCode = sm_.errorCode();

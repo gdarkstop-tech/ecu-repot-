@@ -27,10 +27,11 @@ class Content:
 class TutorReply:
     text: str
     lang: str
-    emotion: str = "happy"      # happy | sad | surprised | idle | thinking
+    emotion: str = "happy"      # one of pipeline.ALLOWED_EMOTIONS
     oled: str | None = None     # short subtitle (logical order; shaped later)
     content: Content | None = None
     source: str = "tutor"
+    emotion_ms: int | None = None  # how long the face stays after speaking (None: the robot's default)
 
 
 @dataclass
